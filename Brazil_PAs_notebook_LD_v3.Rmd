@@ -1,0 +1,483 @@
+---
+title: "Protected Areas - Brazil Notebook"
+output: html_notebook
+---
+Protected Areas analysis (from Amber Liang's Tanzania work adapted to Brazil)
+
+```{r}
+library(sp)
+library(rgdal)
+library(raster)
+library(rgeos)
+library(maptools)
+library(dplyr)
+library(ggplot2)
+library(sf)
+library(spatialEco)
+library(reticulate)
+
+#f.path <- "/Users/veronika/leitoldv/"
+f.path <- "/gpfs/data1/duncansongp/leitoldv/"
+```
+
+
+
+PART1a. Read in protected areas (testing with Brazil) from WDPA dataset & select testPA
+```{r}
+allPAs <- readOGR(file.path(f.path,"brazil_PAs/BRA_pa/WDPA_Jun2020_BRA-shapefile-polygons.shp"))
+i <- 34004 ##test with the Kayapó PA in Brazil
+search.dist <- 1 ##set "surrounding area" 1º from testPA polygon bounary in all directions
+testID <- allPAs$WDPAID[i]
+testPA <- allPAs[allPAs$WDPAID==testID,]
+  xmin <- bbox(testPA)["x","min"] - search.dist
+  ymax <- bbox(testPA)["y","max"] + search.dist
+  xmax <- bbox(testPA)["x","max"] + search.dist
+  ymin <- bbox(testPA)["y","min"] - search.dist
+test.ext <- as(raster::extent(xmin, xmax, ymin, ymax), "SpatialPolygons")
+proj4string(test.ext) <- "+init=epsg:4326"
+
+# Specify GEDI data output file name
+gediPATH <- "/gpfs/data1/duncansongp/leitoldv/WDPA_gedi"
+gediNAME <- paste("WDPA_",testID,"_l2a.csv",sep="")
+gediOUT  <- file.path(gediPATH, gediNAME)
+```
+
+
+PART1b. Subset GEDI data for the extent of the testPA + search.dist bbox (xmin ymax xmax ymin)
+```{python}
+# conda activate issgedi_umd
+# module unload gdal
+
+issgedi_export_subset.py --root_path /gpfs/data1/duncansongp/gedi_data/ -d /gpfs/data1/duncansongp/leitoldv/txt/l2a_vars.txt -b xmin ymax xmax ymin --product GEDI02 --level A --pgeversion 1 gediOUT
+
+```
+
+
+PART1c. Filter out 'bad quality' GEDI data from subset
+```{r}
+file.in  <- gediOUT
+path.out <- "/gpfs/data1/duncansongp/leitoldv/WDPA_gedi_clean/"
+#
+data.in <- read.csv(file.in)
+data.bad <- which(data.in[,"quality_flag"] == 0)
+data.good <- data.in[-data.bad,]
+#
+file.out <- paste(path.out, sub(".csv","",basename(file.in)), "_clean.csv", sep="")
+write.csv(data.good, file = file.out)
+#
+rm(data.in, data.bad, data.good)
+```
+
+
+PART1d. Create 1km sampling grid with points only where GEDI data is available
+```{r}
+#1) load up EASE2_M01km_[lats|lons].tif rasters ##epsg:6933
+GRID.lats <- raster(file.path(f.path,"EASE2_M01km_lats.tif"))
+GRID.lons <- raster(file.path(f.path,"EASE2_M01km_lons.tif"))
+
+#2) clip the grids to the extent of testPA + surrounding area
+GRID.lats.adm   <- crop(GRID.lats, test.ext)
+GRID.lats.adm.m <- mask(GRID.lats.adm, test.ext)
+GRID.lons.adm   <- crop(GRID.lons, test.ext)
+GRID.lons.adm.m <- mask(GRID.lons.adm, test.ext)
+
+rm(GRID.lats, GRID.lons, GRID.lats.adm, GRID.lons.adm)
+
+#3) extract coordinates of raster cells with valid GEDI data in them
+GRID.coords <- data.frame()
+file.clean  <- file.out ##from STEP3. above
+  gedi_coords  <- read.csv(file.clean)[,c("lon_lowestmode","lat_lowestmode")]
+  gedi_pts     <- SpatialPoints(coords=gedi_coords, proj4string=CRS("+init=epsg:4326"))
+  gedi_pts_prj <- spTransform(gedi_pts, "+init=epsg:6933")
+  
+  GRID.lons.overlap <- GRID.lons.te.m[gedi_pts_prj]
+  GRID.lats.overlap <- GRID.lats.adm.m[gedi_pts_prj]
+  
+  x.overlap <- GRID.lons.overlap[!is.na(GRID.lons.overlap)]
+  y.overlap <- GRID.lats.overlap[!is.na(GRID.lats.overlap)]
+  
+  xy.overlap <- cbind(x.overlap,y.overlap)
+  xy.overlap.clean <- unique(xy.overlap)
+  
+  GRID.coords <- rbind(GRID.coords, xy.overlap.clean)
+  print(nrow(GRID.coords))
+
+GRID.for.matching <- SpatialPoints(coords=GRID.coords, proj4string=CRS("+init=epsg:4326"))
+#saveRDS(GRID.for.matching, file = paste(f.path,"GRID.for.matching.RDS",sep=""))
+```
+
+
+PART2. Clip the sampling grid to testPA and nonPA areas within the GEDI extent
+```{r}
+# buffer testPA for edge effects
+testPA_prj      <- spTransform(testPA, "+init=epsg:6933")
+testPA_prj_buff <- gBuffer(testPA_prj, width = -10000) #10km buffer
+testPA2         <- spTransform(testPA_prj_buff, "+init=epsg:4326")
+# clip GRID.for.matching extent to testPA area
+GRID.pts.testPA <- GRID.for.matching[testPA2]
+saveRDS(GRID.pts.testPA, file = paste(f.path,"GRID.pts.testPA.RDS",sep="")) 
+
+#select nonPA areas from within the gedi extent
+GRID.pts.nonPA <- GRID.for.matching
+PAs_ext <- crop(allPAs, test.ext)
+PAs_prj <- spTransform(PAs_ext, "+init=epsg:6933")
+PAs_prj_buff <- gBuffer(PAs_prj, width = 1000) #1km buffer
+PA2     <- spTransform(PAs_prj_buff, "+init=epsg:4326")
+overlap <- GRID.pts.nonPA[PA2]
+if(length(overlap)>0){
+  GRID.pts.nonPA <- erase.point(GRID.pts.nonPA, PA2, inside = T) ##remove pts inside poly
+  } 
+print(length(GRID.pts.nonPA))
+saveRDS(GRID.pts.nonPA, file = paste(f.path,"GRID.pts.nonPA.RDS",sep="")) 
+
+```
+
+
+PART3. Sample raster layers at 1 km GEDI grid points in testPA and nonPA areas
+```{r}
+#f.path <- "/Users/veronika/leitoldv/"
+f.path <- "/gpfs/data1/duncansongp/leitoldv/"
+
+### read in Brazil testPA and nonPA sampling grids
+GRID.pts.testPA <- readRDS(file.path(f.path,"GRID.pts.testPA.RDS"))
+GRID.pts.nonPA  <- readRDS(file.path(f.path,"GRID.pts.nonPA.RDS"))
+#plot(GRID.pts.nonPA, pch=".")
+#plot(GRID.pts.testPA, pch=".", col="red", add=T)
+testPA_xy <- coordinates(GRID.pts.testPA); colnames(testPA_xy) <- c("x","y")
+nonPA_xy  <- coordinates(GRID.pts.nonPA);  colnames(nonPA_xy)  <- c("x","y")
+testPA_spdf <- SpatialPointsDataFrame(testPA_xy, data=data.frame(testPA_xy),
+                                      proj4string=CRS("+init=epsg:4326"))
+nonPA_spdf  <- SpatialPointsDataFrame(nonPA_xy, data=data.frame(nonPA_xy),
+                                     proj4string=CRS("+init=epsg:4326"))
+
+#------function to compile covariates by extracting rasters at a given spdf coords
+rraster <- function(r,spdf){
+  print(r)
+  ras=raster(r)
+  ras_prj=projectRaster(ras, crs="+init=epsg:4326", method="ngb")
+  ras_ex=raster::extract(ras_prj, spdf@coords, method="simple", factors=F)
+  nm=names(ras)
+  print(nm)
+  return(ras_ex)
+}
+
+#list all the covariates in tif format 
+setwd(file.path(f.path,"brazil_PAs/BRA_input_vars/"))
+tifs <- list.files(getwd(),".tif")
+tifs
+
+#Matching covariates:
+# 1. biom (biomes.tif)  ## biome
+# 2. ecoreg (ecoreg.tif)  ## ecoregion
+# 3. land_cover (lc2000.tif)  ## land cover 2000
+# 4. mean_temp (annual_mean_temp.tif)  ## mean annual temperature
+# 5. prec (annual_prec.tif)  ## annual precipitation
+# 6. elevation (bra_dem.tif)  ## terrain elevation
+# 7. slope (bra_slope.tif)  ## terrain slope
+# 8. pop (pop_cnt_2000.tif)  ## population count
+# 9. popden (pop_den_2000.tif)  ## population density
+#10. d2city (dcities.tif)  ## distance to cities
+#11. tt2city (tt2cities.tif)  ## travel time to cities
+#12. d2road (d2roads.tif)  ## distance to roads
+#13. gHMI (median_gHM_bra.tif)  ## global Human Modification Index
+
+#loop through the tifs
+for (i in 1:length(tifs)){
+  print(tifs[i])
+  testPA_spdf = cbind(testPA_spdf, rraster(tifs[i], testPA_spdf))
+  names(testPA_spdf)[i+2] = tifs[i]
+  print(dim(testPA_spdf))
+  nonPA_spdf = cbind(nonPA_spdf, rraster(tifs[i], nonPA_spdf))
+  names(nonPA_spdf)[i+2] = tifs[i]
+  print(dim(nonPA_spdf))
+}
+
+head(testPA_spdf)
+head(nonPA_spdf)
+
+saveRDS(testPA_spdf, file.path(f.path,"brazil_PAs/BRA_matching_points/testPA_spdf.RDS")) 
+saveRDS(nonPA_spdf, file.path(f.path,"brazil_PAs/BRA_matching_points/nonPA_spdf.RDS")) 
+```
+
+
+STEP 4. Prepare .csv data files for point matching process
+```{r}
+library(rgdal)
+library(rgeos)
+library(foreach)
+library(dplyr)
+library(doParallel)
+registerDoParallel(4)
+
+# Read and combine point data files
+d_control <- readRDS(file.path(f.path,"brazil_PAs/BRA_matching_points/nonPA_spdf.RDS"))
+d_control$status <- as.logical("FALSE")
+d_control <- data.frame(d_control)
+
+d_pa <- readRDS(file.path(f.path,"brazil_PAs/BRA_matching_points/testPA_spdf.RDS"))
+d_pa$status <- as.logical("TRUE")
+d_pa <- data.frame(d_pa)
+
+d <- dplyr::bind_rows(d_control, d_pa) %>%
+     dplyr::rename(
+           land_cover = lc2000.tif,
+           slope = bra_slope.tif,
+           elevation = bra_dem.tif,
+           pop = pop_cnt_2000.tif,
+           popden = pop_den_2000.tif,
+           mean_temp = annual_mean_temp.tif,
+           prec = annual_prec.tif,
+           biom = biomes.tif,
+           ecoreg = ecoreg.tif,
+           d2city = dcities.tif,
+           tt2city= tt2cities.tif,
+           d2road = d2roads.tif,
+           gHMI = median_gHM_bra.tif,
+           lon = x,
+           lat = y)
+
+d$land_cover <- factor(d$land_cover,
+                       levels=sequence(7),
+                       labels = c("l1_forest",
+                                  "l2_grassland",
+                                  "l3_agriculture",
+                                  "l4_wetlands",
+                                  "l5_artificial",
+                                  "l6_other land/bare",
+                                  "l7_water"))
+
+ecoreg_key <- read.csv(file.path(f.path,"brazil_PAs/BRA_matching_points/resolve_ecoregions_key.csv"))
+
+d$biom <- factor(d$biom,
+                 levels = as.vector(unique(ecoreg_key[,"BIOME_NUM"])),
+                 labels = as.vector(unique(ecoreg_key[,"BIOME_NAME"])))
+
+d$ecoreg <- factor(d$ecoreg,
+                   levels = as.vector(ecoreg_key[,"ECO_ID"]),
+                   labels = as.vector(ecoreg_key[,"ECO_NAME"]))
+
+head(d)
+nrow(d)
+
+saveRDS(d, file = file.path(f.path,"brazil_PAs/BRA_matching_points/prepped_control_pa.RDS")) 
+
+```
+
+
+STEP 5. Point matching adapted from Alex Zvoleff's original script (https://github.com/azvoleff/wocat_matching) by Mengyu Liang  ##modified by VL for Brazil
+```{r}
+library(MASS)
+library(foreach)
+library(dplyr)
+library(ggplot2)
+library(optmatch)
+library(doParallel)
+library(RItools)
+library(rgeos)
+library(rlang)
+library(sp)
+library(rgdal)
+library(tidyr)
+registerDoParallel(6)
+
+options("optmatch_max_problem_size"=Inf)
+
+data_folder <- file.path(f.path,"brazil_PAs/BRA_matching_points/")
+
+###############################################################################
+# Load point data
+
+d <- readRDS(file.path(data_folder, "prepped_control_pa.RDS"))
+d <- data.frame(d)
+head(d)
+nrow(d)
+
+###############################################################################
+# Clean data for matching
+
+# Function to allow rbinding dataframes with foreach even when some dataframes 
+# may not have any rows
+foreach_rbind <- function(d1, d2) {
+    if (is.null(d1) & is.null(d2)) {
+        return(NULL)
+    } else if (!is.null(d1) & is.null(d2)) {
+        return(d1)
+    } else if (is.null(d1) & !is.null(d2)) {
+        return(d2)
+    } else  {
+        return(rbind(d1, d2))
+    }
+}
+
+match_wocat <- function(df) {
+  # Filter out countries without at least one treatment unit or without at
+  # least one control unit
+  df <- df %>%
+    filter(complete.cases(.)) %>%
+    
+    #the following lines do nothing because only one PA at a time
+    #mutate(n_treatment=sum(status),
+    #       n_control=sum(!status)) %>%
+    #the next line doesn't do 
+    #filter(n_treatment >= 1, n_control >= 1)
+  
+  # Note custom combine to handle iterations that don't return any value
+  #test nested foreach loops
+    ret <- foreach (this_lc=unique(df$land_cover),
+                  .packages=c('optmatch', 'dplyr'),
+                  .combine=foreach_rbind, .inorder=FALSE) %dopar% {
+                    this_d<-df
+                    d_wocat <- filter(this_d, status)
+                    # Filter out climates and land covers that don't appear in the wocat
+                    # sample, and drop these levels from the factors
+                    this_d <- filter(this_d,
+                                     land_cover %in% unique(d_wocat$land_cover),
+                                     biom %in% unique(d_wocat$biom),
+                                     ecoreg %in% unique(d_wocat$ecoreg))
+                    
+                    this_d$land_cover <- droplevels(this_d$land_cover)
+                    this_d$biom <- droplevels(this_d$biom)
+                    this_d$ecoreg <- droplevels(this_d$ecoreg)
+                    table(this_d$status)
+                    f <- status ~ elevation + slope + mean_temp + prec + d2city + tt2city + d2road + pop + popden + gHMI
+                    # Can't stratify by land cover or climate if they only have one level
+                    if (nlevels(this_d$land_cover) >= 2) {
+                      f <- update(f, ~ . + strata(land_cover))
+                    } else {
+                      f <- update(f, ~ . - land_cover)
+                    }
+                    if (nlevels(this_d$biom) >= 2) {
+                      f <- update(f, ~ . + strata(biom))
+                    } else {
+                      f <- update(f, ~ . - biom)
+                    }
+                    if (nlevels(this_d$ecoreg) >= 2) {
+                      f <- update(f, ~ . + strata(ecoreg))
+                    } else {
+                      f <- update(f, ~ . - ecoreg)
+                    }
+                    
+                    if (nrow(d_wocat) > 2) {
+                      model <- glm(f, data=this_d)
+                      dists <- match_on(model, data=this_d)
+                    } else {
+                      # Use Mahalanobis distance if there aren't enough points to run a
+                      # glm
+                      dists <- match_on(f, data=this_d)
+                    }
+                    #potentially drop caliper line; will cut down dists matrix but not the speed issue
+                    dists <- caliper(dists, 2)
+                    #print(dists)
+                    # If the controls are too far from the treatments (due to the caliper) 
+                    # then the matching may fail. Can test for this by seeing if subdim 
+                    # runs successfully
+                    subdim_works <- tryCatch(is.data.frame(subdim(dists)),
+                                             error=function(e) return(FALSE))
+                    if (subdim_works) {
+                      m <- fullmatch(dists, min.controls=1, max.controls=1, data=this_d)
+                      this_d <- this_d[matched(m), ]
+                      # print("works")
+                      # print(matched(m))
+                      # print(dim(this_d))
+                      # xb1=xBalance(f, data = this_d)  #check the balance score before matching
+                      # print("unmatched stats")
+                      # print(xb1)
+                      # jpeg(file="unmacthed plot.jpeg")
+                      # plot(xb1)
+                      # dev.off()
+                      #xb2=xBalance(f +strata(m) -1, # the `-1` just focuses the output a little
+                      #              data = this_d)   #check the balance post matching 
+                      # print("matched stats")
+                      # print(xb2)
+                      # jpeg(file="macthed plot.jpeg")  #export the balance score viz as jpeg 
+                      # plot(xb2)
+                      # dev.off()
+                    } else {
+                      this_d <- data.frame()
+                    }
+                    # Need to handle the possibility that there were no matches for this 
+                    # treatment, meaning this_d will be an empty data.frame
+                    if (nrow(this_d) == 0) {
+                      return(NULL)
+                    } else {
+                      return(this_d)
+                    }
+                  }
+  return(ret)
+}
+
+###############################################################################
+# Match by approaches
+
+#treatment dataset
+d_wocat_all <- filter(d, status)
+d_wocat_all_sp <- SpatialPointsDataFrame(dplyr::select(d_wocat_all, lon, lat),
+                                         d_wocat_all,
+                                         proj4string=CRS('+init=epsg:4326'))
+#control dataset
+d_control_all <- filter(d, !status)
+
+#sample the control dataset to the size of the sample dataset, keep unsampled ids to iterate until full number of matches found
+n_treatment <- nrow(d_wocat_all)
+n_sample <- (n_treatment*7)
+ids_all <- seq(1,nrow(d_control_all))
+
+n_matches <- 0
+m_all2_out <- data.frame()
+while(n_matches < n_treatment){
+  n_ids <- length(ids_all)
+  if(n_ids > n_sample){
+    sample_ids <- sample(ids_all, n_sample)
+    d_control_sample <- d_control_all[sample_ids,]
+    ids_all <- ids_all[-sample_ids]
+  
+    d_control_all_sp <- SpatialPointsDataFrame(dplyr::select(d_control_sample, lon, lat),
+                                           d_control_sample,
+                                           proj4string=CRS('+init=epsg:4326'))
+  
+    #plot(d_control_all_sp, pch=".")
+    #plot(d_wocat_all_sp, pch=".", col="red", add=T)
+
+    # All approaches
+    new_d <- rbind(d_wocat_all_sp, d_control_all_sp)@data
+    d_filt_all <- dplyr::select(new_d, lat, lon, status, land_cover, biom, ecoreg,
+                            elevation, slope, pop, popden, mean_temp, prec,
+                            d2city, tt2city, d2road, gHMI) 
+
+    #outside of the match_wocat function check the balance
+    f <- status ~ elevation + slope + mean_temp + prec + d2city + tt2city + d2road + pop + popden + gHMI
+    xb <- xBalance(status ~ elevation + slope + mean_temp + prec + d2city + tt2city + d2road + pop + popden + gHMI,
+               data = d_filt_all)
+    #plot(xb)
+    #do a glm here to throw out definitely not control data based on low propensity score (they weren't going to be matching anyways)
+    
+    #create a smaller distance matrix
+    
+    #
+    m_all <- match_wocat(d_filt_all)
+    m_all2 <- m_all%>%unique()
+    n_matches_temp <- nrow(m_all2)
+    if(!is.null(n_matches_temp)){
+      n_matches <- n_matches + nrow(m_all2)
+      m_all2_out <- rbind(m_all2, m_all2_out)
+      print(nrow(m_all2_out))
+    }
+  } else {n_treatment <- n_matches}
+}
+
+m_all_sp <- SpatialPointsDataFrame(coords=m_all2_out[,c( "lon","lat")],
+                                          m_all2_out,
+                                          proj4string=CRS('+init=epsg:4326'))
+#plot(d_control_all_sp, pch=".")
+#plot(d_wocat_all_sp, pch=".", col="red", add=T)
+
+#plot(d_control_all_sp, pch=".")
+#points(d_wocat_all_sp, pch=".", col="red")
+#points(m_all_sp, col="blue")
+file_out <- '/gpfs/data1/duncansongp/laura_docs/brazil_test_out.Rdata'
+save(m_all_sp, file=file_out)
+#writeOGR(m_all_sp, data_folder, "wocat_macthed_bra", "ESRI Shapefile", overwrite=TRUE)
+
+```
+
+
