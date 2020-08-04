@@ -4,6 +4,41 @@ output: html_notebook
 ---
 Protected Areas analysis (from Amber Liang's Tanzania work adapted to Brazil)
 
+
+PART0a. Subset GEDI data to Brazil extent; extract L2A variables
+```{python}
+##use code from this .txt file "/gpfs/data1/duncansongp/leitoldv/Subset_GEDI_Brazil.txt"
+##extracted .csv files saved here: "/gpfs/data1/duncansongp/leitoldv/brazil_gedi/"
+```
+
+PART0b. Filter out 'bad quality' GEDI data
+```{r}
+path.in  <- "/gpfs/data1/duncansongp/leitoldv/brazil_gedi/"
+path.out <- "/gpfs/data1/duncansongp/leitoldv/brazil_gedi_clean/"
+#
+setwd(path.in)
+dir()
+for(i in 1:length(dir()))
+  {
+  file.in <- dir()[i]
+  data.in <- read.csv(file.in)
+  data.bad  <- which(data.in[,"quality_flag"] == 0)
+  data.good <- data.in[-data.bad,]
+  
+  ## filter by sensitivity
+  #low.sens  <- which(data.good[,"sensitivity"] < 0.95)
+  #data.sens <- data.good[-low.sens,]
+  
+  file.out1 <- paste(path.out, substr(file.in,1,19), "_clean1.csv", sep="")
+  write.csv(data.good, file = file.out1)
+  #file.out2 <- paste(path.out, substr(file.in,1,19), "_clean2.csv", sep="")
+  #write.csv(data.sens, file = file.out2)
+  rm(data.in, data.bad, data.good, low.sens, data.sens)
+  }
+```
+
+
+PART1. Create 1km sampling grid with points only where GEDI data is available
 ```{r}
 library(sp)
 library(rgdal)
@@ -14,83 +49,41 @@ library(dplyr)
 library(ggplot2)
 library(sf)
 library(spatialEco)
-library(reticulate)
 
 #f.path <- "/Users/veronika/leitoldv/"
-f.path <- "/gpfs/data1/duncansongp/leitoldv/"
+f.path <- "/gpfs/data1/duncansongp/leitoldv"
 ```
 
 
-
-PART1a. Read in protected areas (testing with Brazil) from WDPA dataset & select testPA
-```{r}
-allPAs <- readOGR(file.path(f.path,"brazil_PAs/BRA_pa/WDPA_Jun2020_BRA-shapefile-polygons.shp"))
-i <- 34004 ##test with the Kayapó PA in Brazil
-search.dist <- 1 ##set "surrounding area" 1º from testPA polygon bounary in all directions
-testID <- allPAs$WDPAID[i]
-testPA <- allPAs[allPAs$WDPAID==testID,]
-  xmin <- bbox(testPA)["x","min"] - search.dist
-  ymax <- bbox(testPA)["y","max"] + search.dist
-  xmax <- bbox(testPA)["x","max"] + search.dist
-  ymin <- bbox(testPA)["y","min"] - search.dist
-test.ext <- as(raster::extent(xmin, xmax, ymin, ymax), "SpatialPolygons")
-proj4string(test.ext) <- "+init=epsg:4326"
-
-# Specify GEDI data output file name
-gediPATH <- "/gpfs/data1/duncansongp/leitoldv/WDPA_gedi"
-gediNAME <- paste("WDPA_",testID,"_l2a.csv",sep="")
-gediOUT  <- file.path(gediPATH, gediNAME)
-```
-
-
-PART1b. Subset GEDI data for the extent of the testPA + search.dist bbox (xmin ymax xmax ymin)
-```{python}
-# conda activate issgedi_umd
-# module unload gdal
-
-issgedi_export_subset.py --root_path /gpfs/data1/duncansongp/gedi_data/ -d /gpfs/data1/duncansongp/leitoldv/txt/l2a_vars.txt -b xmin ymax xmax ymin --product GEDI02 --level A --pgeversion 1 gediOUT
-
-```
-
-
-PART1c. Filter out 'bad quality' GEDI data from subset
-```{r}
-file.in  <- gediOUT
-path.out <- "/gpfs/data1/duncansongp/leitoldv/WDPA_gedi_clean/"
-#
-data.in <- read.csv(file.in)
-data.bad <- which(data.in[,"quality_flag"] == 0)
-data.good <- data.in[-data.bad,]
-#
-file.out <- paste(path.out, sub(".csv","",basename(file.in)), "_clean.csv", sep="")
-write.csv(data.good, file = file.out)
-#
-rm(data.in, data.bad, data.good)
-```
-
-
-PART1d. Create 1km sampling grid with points only where GEDI data is available
 ```{r}
 #1) load up EASE2_M01km_[lats|lons].tif rasters ##epsg:6933
 GRID.lats <- raster(file.path(f.path,"EASE2_M01km_lats.tif"))
 GRID.lons <- raster(file.path(f.path,"EASE2_M01km_lons.tif"))
 
-#2) clip the grids to the extent of testPA + surrounding area
-GRID.lats.adm   <- crop(GRID.lats, test.ext)
-GRID.lats.adm.m <- mask(GRID.lats.adm, test.ext)
-GRID.lons.adm   <- crop(GRID.lons, test.ext)
-GRID.lons.adm.m <- mask(GRID.lons.adm, test.ext)
+#2) clip the rasters to Brazil adm boundary
+adm <- readOGR(file.path(f.path,"brazil_PAs/BRA_adm0/BRA_adm0.shp"))
+adm_prj <- spTransform(adm, "+init=epsg:6933") 
+GRID.lats.adm   <- crop(GRID.lats, adm_prj)
+GRID.lats.adm.m <- mask(GRID.lats.adm, adm_prj)
+GRID.lons.adm   <- crop(GRID.lons, adm_prj)
+GRID.lons.adm.m <- mask(GRID.lons.adm, adm_prj)
 
 rm(GRID.lats, GRID.lons, GRID.lats.adm, GRID.lons.adm)
 
 #3) extract coordinates of raster cells with valid GEDI data in them
+gedi_folder <- file.path(f.path,"brazil_gedi_clean/")
+setwd(gedi_folder)
+dir()
+
 GRID.coords <- data.frame()
-file.clean  <- file.out ##from STEP3. above
-  gedi_coords  <- read.csv(file.clean)[,c("lon_lowestmode","lat_lowestmode")]
+
+for(i in 1:length(dir())){
+  print(dir()[i])
+  gedi_coords  <- read.csv(dir()[i])[,c("lon_lowestmode","lat_lowestmode")]
   gedi_pts     <- SpatialPoints(coords=gedi_coords, proj4string=CRS("+init=epsg:4326"))
   gedi_pts_prj <- spTransform(gedi_pts, "+init=epsg:6933")
   
-  GRID.lons.overlap <- GRID.lons.te.m[gedi_pts_prj]
+  GRID.lons.overlap <- GRID.lons.adm.m[gedi_pts_prj]
   GRID.lats.overlap <- GRID.lats.adm.m[gedi_pts_prj]
   
   x.overlap <- GRID.lons.overlap[!is.na(GRID.lons.overlap)]
@@ -101,46 +94,53 @@ file.clean  <- file.out ##from STEP3. above
   
   GRID.coords <- rbind(GRID.coords, xy.overlap.clean)
   print(nrow(GRID.coords))
+}
 
 GRID.for.matching <- SpatialPoints(coords=GRID.coords, proj4string=CRS("+init=epsg:4326"))
-#saveRDS(GRID.for.matching, file = paste(f.path,"GRID.for.matching.RDS",sep=""))
+saveRDS(GRID.for.matching, file = file.path(f.path,"brazil_PAs/BRA_grid/GRID.for.matching.RDS"))
 ```
 
 
-PART2. Clip the sampling grid to testPA and nonPA areas within the GEDI extent
+PART2. Clip the sampling grid to testPA and nonPA areas within country
 ```{r}
-# buffer testPA for edge effects
-testPA_prj      <- spTransform(testPA, "+init=epsg:6933")
-testPA_prj_buff <- gBuffer(testPA_prj, width = -10000) #10km buffer
-testPA2         <- spTransform(testPA_prj_buff, "+init=epsg:4326")
-# clip GRID.for.matching extent to testPA area
-GRID.pts.testPA <- GRID.for.matching[testPA2]
-saveRDS(GRID.pts.testPA, file = paste(f.path,"GRID.pts.testPA.RDS",sep="")) 
+f.path <- "/gpfs/data1/duncansongp/leitoldv"
 
-#select nonPA areas from within the gedi extent
+GRID.for.matching <- readRDS(file.path(f.path,"brazil_PAs/BRA_grid/GRID.for.matching.RDS"))
+
+#4) read in protected areas for selected country from WDPA dataset
+allPAs <- readOGR(file.path(f.path,"brazil_PAs/BRA_pa/WDPA_Jun2020_BRA-shapefile-polygons.shp"))
+
+#5) clip GRID.for.matching extent to testPA area
+testPA <- allPAs[allPAs$NAME=="Kayapó",]
+testPA <- spTransform(testPA, "+init=epsg:4326")
+GRID.pts.testPA <- GRID.for.matching[testPA]
+print(length(GRID.pts.testPA))
+saveRDS(GRID.pts.testPA, file = file.path(f.path,"brazil_PAs/BRA_grid/GRID.pts.testPA.RDS")) 
+
+#6) select each PA, buffer it by 1km, erase GRID points that overlap with PA
 GRID.pts.nonPA <- GRID.for.matching
-PAs_ext <- crop(allPAs, test.ext)
-PAs_prj <- spTransform(PAs_ext, "+init=epsg:6933")
-PAs_prj_buff <- gBuffer(PAs_prj, width = 1000) #1km buffer
-PA2     <- spTransform(PAs_prj_buff, "+init=epsg:4326")
-overlap <- GRID.pts.nonPA[PA2]
-if(length(overlap)>0){
-  GRID.pts.nonPA <- erase.point(GRID.pts.nonPA, PA2, inside = T) ##remove pts inside poly
+for(i in 1:length(allPAs)){
+  PA          <- allPAs[i,]
+  PA_prj      <- spTransform(PA, "+init=epsg:5880")
+  PA_prj_buff <- gBuffer(PA_prj, width = 1000) #1km buffer
+  PA2         <- spTransform(PA_prj_buff, "+init=epsg:4326")
+  overlap     <- GRID.pts.nonPA[PA2]
+  if(length(overlap)>0){
+    GRID.pts.nonPA <- erase.point(GRID.pts.nonPA, PA2, inside = T) ##remove pts inside poly
   } 
-print(length(GRID.pts.nonPA))
-saveRDS(GRID.pts.nonPA, file = paste(f.path,"GRID.pts.nonPA.RDS",sep="")) 
-
+  print(length(GRID.pts.nonPA))
+}
+saveRDS(GRID.pts.nonPA, file = file.path(f.path,"brazil_PAs/BRA_grid/GRID.pts.nonPA.RDS")) 
 ```
 
 
 PART3. Sample raster layers at 1 km GEDI grid points in testPA and nonPA areas
 ```{r}
-#f.path <- "/Users/veronika/leitoldv/"
-f.path <- "/gpfs/data1/duncansongp/leitoldv/"
+f.path <- "/gpfs/data1/duncansongp/leitoldv"
 
 ### read in Brazil testPA and nonPA sampling grids
-GRID.pts.testPA <- readRDS(file.path(f.path,"GRID.pts.testPA.RDS"))
-GRID.pts.nonPA  <- readRDS(file.path(f.path,"GRID.pts.nonPA.RDS"))
+GRID.pts.testPA <- readRDS(file.path(f.path,"brazil_PAs/BRA_grid/GRID.pts.testPA.RDS"))
+GRID.pts.nonPA  <- readRDS(file.path(f.path,"brazil_PAs/BRA_grid/GRID.pts.nonPA.RDS"))
 #plot(GRID.pts.nonPA, pch=".")
 #plot(GRID.pts.testPA, pch=".", col="red", add=T)
 testPA_xy <- coordinates(GRID.pts.testPA); colnames(testPA_xy) <- c("x","y")
@@ -209,6 +209,8 @@ library(dplyr)
 library(doParallel)
 registerDoParallel(4)
 
+f.path <- "/gpfs/data1/duncansongp/leitoldv"
+
 # Read and combine point data files
 d_control <- readRDS(file.path(f.path,"brazil_PAs/BRA_matching_points/nonPA_spdf.RDS"))
 d_control$status <- as.logical("FALSE")
@@ -260,7 +262,6 @@ head(d)
 nrow(d)
 
 saveRDS(d, file = file.path(f.path,"brazil_PAs/BRA_matching_points/prepped_control_pa.RDS")) 
-
 ```
 
 
@@ -282,6 +283,7 @@ registerDoParallel(6)
 
 options("optmatch_max_problem_size"=Inf)
 
+f.path <- "/gpfs/data1/duncansongp/leitoldv"
 data_folder <- file.path(f.path,"brazil_PAs/BRA_matching_points/")
 
 ###############################################################################
