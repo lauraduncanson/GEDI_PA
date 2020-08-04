@@ -5,13 +5,13 @@ output: html_notebook
 Protected Areas analysis (from Amber Liang's Tanzania work adapted to Brazil)
 
 
-PART0a. Subset GEDI data to Brazil extent; extract L2A variables
+STEP0a. Subset GEDI data to Brazil extent; extract L2A variables
 ```{python}
 ##use code from this .txt file "/gpfs/data1/duncansongp/leitoldv/Subset_GEDI_Brazil.txt"
 ##extracted .csv files saved here: "/gpfs/data1/duncansongp/leitoldv/brazil_gedi/"
 ```
 
-PART0b. Filter out 'bad quality' GEDI data
+STEP0b. Filter out 'bad quality' GEDI data
 ```{r}
 path.in  <- "/gpfs/data1/duncansongp/leitoldv/brazil_gedi/"
 path.out <- "/gpfs/data1/duncansongp/leitoldv/brazil_gedi_clean/"
@@ -38,7 +38,7 @@ for(i in 1:length(dir()))
 ```
 
 
-PART1. Create 1km sampling grid with points only where GEDI data is available
+STEP1. Create 1km sampling grid with points only where GEDI data is available
 ```{r}
 library(sp)
 library(rgdal)
@@ -101,7 +101,7 @@ saveRDS(GRID.for.matching, file = file.path(f.path,"brazil_PAs/BRA_grid/GRID.for
 ```
 
 
-PART2. Clip the sampling grid to testPA and nonPA areas within country
+STEP2. Clip the sampling grid to testPA and nonPA areas within country
 ```{r}
 f.path <- "/gpfs/data1/duncansongp/leitoldv"
 
@@ -134,7 +134,7 @@ saveRDS(GRID.pts.nonPA, file = file.path(f.path,"brazil_PAs/BRA_grid/GRID.pts.no
 ```
 
 
-PART3. Sample raster layers at 1 km GEDI grid points in testPA and nonPA areas
+STEP3. Sample raster layers at 1 km GEDI grid points in testPA and nonPA areas
 ```{r}
 f.path <- "/gpfs/data1/duncansongp/leitoldv"
 
