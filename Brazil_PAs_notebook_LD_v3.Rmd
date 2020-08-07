@@ -314,8 +314,8 @@ foreach_rbind <- function(d1, d2) {
 match_wocat <- function(df) {
   # Filter out countries without at least one treatment unit or without at
   # least one control unit
-  df <- df %>%
-    filter(complete.cases(.)) %>%
+  # df <- df %>%
+  #   filter(complete.cases(.)) %>%
     
     #the following lines do nothing because only one PA at a time
     #mutate(n_treatment=sum(status),
@@ -341,7 +341,7 @@ match_wocat <- function(df) {
                     this_d$biom <- droplevels(this_d$biom)
                     this_d$ecoreg <- droplevels(this_d$ecoreg)
                     table(this_d$status)
-                    f <- status ~ elevation + slope + mean_temp + prec + d2city + tt2city + d2road + pop + popden + gHMI
+                    f <- status ~ elevation + slope + mean_temp + gHMI
                     # Can't stratify by land cover or climate if they only have one level
                     if (nlevels(this_d$land_cover) >= 2) {
                       f <- update(f, ~ . + strata(land_cover))
@@ -368,8 +368,8 @@ match_wocat <- function(df) {
                       dists <- match_on(f, data=this_d)
                     }
                     #potentially drop caliper line; will cut down dists matrix but not the speed issue
-                    dists <- caliper(dists, 2)
-                    #print(dists)
+                    # dists <- caliper(dists, 2)
+                  
                     # If the controls are too far from the treatments (due to the caliper) 
                     # then the matching may fail. Can test for this by seeing if subdim 
                     # runs successfully
@@ -378,22 +378,7 @@ match_wocat <- function(df) {
                     if (subdim_works) {
                       m <- fullmatch(dists, min.controls=1, max.controls=1, data=this_d)
                       this_d <- this_d[matched(m), ]
-                      # print("works")
-                      # print(matched(m))
-                      # print(dim(this_d))
-                      # xb1=xBalance(f, data = this_d)  #check the balance score before matching
-                      # print("unmatched stats")
-                      # print(xb1)
-                      # jpeg(file="unmacthed plot.jpeg")
-                      # plot(xb1)
-                      # dev.off()
-                      #xb2=xBalance(f +strata(m) -1, # the `-1` just focuses the output a little
-                      #              data = this_d)   #check the balance post matching 
-                      # print("matched stats")
-                      # print(xb2)
-                      # jpeg(file="macthed plot.jpeg")  #export the balance score viz as jpeg 
-                      # plot(xb2)
-                      # dev.off()
+                  
                     } else {
                       this_d <- data.frame()
                     }
@@ -411,19 +396,53 @@ match_wocat <- function(df) {
 ###############################################################################
 # Match by approaches
 
+#filter controls based on propensity scores 
+d_all <- dplyr::select(d,lat,lon,status, land_cover, biom, ecoreg, elevation, slope,
+             mean_temp,prec, gHMI) 
+
+d_all$status <- ifelse(d_all$status==TRUE,1,0)
+d_com <-d_all[complete.cases(d_all), ]  #filter away non-complete cases w/ NA, only 70% of the data
+#calculate the propensity scores & filter out controls not overlapping w/ treatment propensity scores
+ps <- glm(status ~ mean_temp + prec + elevation + slope+ gHMI,data = d_com)
+# boxplot(ps)  #check the distribution of propensity scores for treatment and controls
+#filter out the controls with propensity scores outside of the overlapping region
+d_com$propensity_score <- fitted(ps)
+d_sep <- d_com %>% group_by(status)
+d_sep_range <- d_com %>% group_by(status)%>% 
+  summarise(propmin= min(propensity_score), promax=max(propensity_score)) 
+print(d_sep_range)
+#  status  propmin promax
+#    <dbl>    <dbl>  <dbl>
+# 1      0 -0.0216  0.108 
+# 2      1  0.00561 0.0570
+d_filtered <- d_sep %>% 
+  filter(status==1 | between(propensity_score,d_sep_range$propmin[2],d_sep_range$promax[2])) %>% 
+  ungroup() #59% percent data left
+#check balance score prior to matching
+pre <-   xBalance(status ~ mean_temp + prec + elevation + slope+ gHMI, 
+                  data =d_filtered,
+                  report = c("adj.means", "std.diffs",
+                             "z.scores", "chisquare.test"))  #prior to matching chisqure 31033
+print(pre$overall) #chisquare 6865
+# plot(pre)
+d_filtered$status <- ifelse(d_filtered$status==1,TRUE,FALSE)
+
+
 #treatment dataset
-d_wocat_all <- filter(d, status)
+d_wocat_all <- filter(d_filtered, status)
 d_wocat_all_sp <- SpatialPointsDataFrame(dplyr::select(d_wocat_all, lon, lat),
                                          d_wocat_all,
                                          proj4string=CRS('+init=epsg:4326'))
 #control dataset
-d_control_all <- filter(d, !status)
+d_control_all <- filter(d_filtered, !status)
 
 #sample the control dataset to the size of the sample dataset, keep unsampled ids to iterate until full number of matches found
 n_treatment <- nrow(d_wocat_all)
 n_sample <- (n_treatment*7)
 ids_all <- seq(1,nrow(d_control_all))
 
+
+startTime <- Sys.time()
 n_matches <- 0
 m_all2_out <- data.frame()
 while(n_matches < n_treatment){
@@ -442,21 +461,14 @@ while(n_matches < n_treatment){
 
     # All approaches
     new_d <- rbind(d_wocat_all_sp, d_control_all_sp)@data
-    d_filt_all <- dplyr::select(new_d, lat, lon, status, land_cover, biom, ecoreg,
-                            elevation, slope, pop, popden, mean_temp, prec,
-                            d2city, tt2city, d2road, gHMI) 
-
+  
     #outside of the match_wocat function check the balance
-    f <- status ~ elevation + slope + mean_temp + prec + d2city + tt2city + d2road + pop + popden + gHMI
-    xb <- xBalance(status ~ elevation + slope + mean_temp + prec + d2city + tt2city + d2road + pop + popden + gHMI,
-               data = d_filt_all)
-    #plot(xb)
+    f <- status ~ elevation + slope + mean_temp + prec + gHMI
     #do a glm here to throw out definitely not control data based on low propensity score (they weren't going to be matching anyways)
     
     #create a smaller distance matrix
     
-    #
-    m_all <- match_wocat(d_filt_all)
+    m_all <- match_wocat(new_d)
     m_all2 <- m_all%>%unique()
     n_matches_temp <- nrow(m_all2)
     if(!is.null(n_matches_temp)){
@@ -467,9 +479,13 @@ while(n_matches < n_treatment){
   } else {n_treatment <- n_matches}
 }
 
+tElapsed <- Sys.time()-startTime
+print(tElapsed)
+
 m_all_sp <- SpatialPointsDataFrame(coords=m_all2_out[,c( "lon","lat")],
                                           m_all2_out,
                                           proj4string=CRS('+init=epsg:4326'))
+
 #plot(d_control_all_sp, pch=".")
 #plot(d_wocat_all_sp, pch=".", col="red", add=T)
 
