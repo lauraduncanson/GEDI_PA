@@ -49,34 +49,27 @@ library(dplyr)
 library(ggplot2)
 library(sf)
 library(spatialEco)
-
 #f.path <- "/Users/veronika/leitoldv/"
 f.path <- "/gpfs/data1/duncansongp/leitoldv"
-```
 
-
-```{r}
-#1) load up EASE2_M01km_[lats|lons].tif rasters ##epsg:6933
+#1.1) load up EASE2_M01km_[lats|lons].tif rasters ##epsg:6933
 GRID.lats <- raster(file.path(f.path,"EASE2_M01km_lats.tif"))
 GRID.lons <- raster(file.path(f.path,"EASE2_M01km_lons.tif"))
 
-#2) clip the rasters to Brazil adm boundary
+#1.2) clip the rasters to Brazil adm boundary
 adm <- readOGR(file.path(f.path,"brazil_PAs/BRA_adm0/BRA_adm0.shp"))
 adm_prj <- spTransform(adm, "+init=epsg:6933") 
 GRID.lats.adm   <- crop(GRID.lats, adm_prj)
 GRID.lats.adm.m <- mask(GRID.lats.adm, adm_prj)
 GRID.lons.adm   <- crop(GRID.lons, adm_prj)
 GRID.lons.adm.m <- mask(GRID.lons.adm, adm_prj)
-
 rm(GRID.lats, GRID.lons, GRID.lats.adm, GRID.lons.adm)
 
-#3) extract coordinates of raster cells with valid GEDI data in them
+#1.3) extract coordinates of raster cells with valid GEDI data in them
 gedi_folder <- file.path(f.path,"brazil_gedi_clean/")
 setwd(gedi_folder)
 dir()
-
 GRID.coords <- data.frame()
-
 for(i in 1:length(dir())){
   print(dir()[i])
   gedi_coords  <- read.csv(dir()[i])[,c("lon_lowestmode","lat_lowestmode")]
@@ -95,34 +88,30 @@ for(i in 1:length(dir())){
   GRID.coords <- rbind(GRID.coords, xy.overlap.clean)
   print(nrow(GRID.coords))
 }
-
 GRID.for.matching <- SpatialPoints(coords=GRID.coords, proj4string=CRS("+init=epsg:4326"))
 saveRDS(GRID.for.matching, file = file.path(f.path,"brazil_PAs/BRA_grid/GRID.for.matching.RDS"))
 ```
 
 
-STEP2. Clip the sampling grid to testPA and nonPA areas within country
+STEP2. Clip sampling grid to nonPA areas within Brazil & sample raster layers on nonPA grid
 ```{r}
 f.path <- "/gpfs/data1/duncansongp/leitoldv"
 
 GRID.for.matching <- readRDS(file.path(f.path,"brazil_PAs/BRA_grid/GRID.for.matching.RDS"))
 
-#4) read in protected areas for selected country from WDPA dataset
+#2.1) read in protected areas from WDPA dataset
 allPAs <- readOGR(file.path(f.path,"brazil_PAs/BRA_pa/WDPA_Jun2020_BRA-shapefile-polygons.shp"))
+#allPAs_prj      <- spTransform(allPAs, "+init=epsg:6933")
+#allPAs_prj_buff <- gBuffer(allPAs_prj, width=10000, byid=T, id=allPAs_prj$WDPAID) #10km buffer
+#allPAs_buffered <- spTransform(allPAs_prj_buff, "+init=epsg:4326")
+#saveRDS(allPAs_buffered, file.path(f.path,"brazil_PAs/BRA_pa/allPAs_buffered.RDS"))
 
-#5) clip GRID.for.matching extent to testPA area
-testPA <- allPAs[allPAs$NAME=="Kayapó",]
-testPA <- spTransform(testPA, "+init=epsg:4326")
-GRID.pts.testPA <- GRID.for.matching[testPA]
-print(length(GRID.pts.testPA))
-saveRDS(GRID.pts.testPA, file = file.path(f.path,"brazil_PAs/BRA_grid/GRID.pts.testPA.RDS")) 
-
-#6) select each PA, buffer it by 1km, erase GRID points that overlap with PA
+#2.2) select each PA, buffer it by 10km, erase GRID points that overlap with PA
 GRID.pts.nonPA <- GRID.for.matching
 for(i in 1:length(allPAs)){
   PA          <- allPAs[i,]
-  PA_prj      <- spTransform(PA, "+init=epsg:5880")
-  PA_prj_buff <- gBuffer(PA_prj, width = 1000) #1km buffer
+  PA_prj      <- spTransform(PA, "+init=epsg:6933")
+  PA_prj_buff <- gBuffer(PA_prj, width = 10000) #10km buffer
   PA2         <- spTransform(PA_prj_buff, "+init=epsg:4326")
   overlap     <- GRID.pts.nonPA[PA2]
   if(length(overlap)>0){
@@ -130,98 +119,40 @@ for(i in 1:length(allPAs)){
   } 
   print(length(GRID.pts.nonPA))
 }
-saveRDS(GRID.pts.nonPA, file = file.path(f.path,"brazil_PAs/BRA_grid/GRID.pts.nonPA.RDS")) 
-```
+#saveRDS(GRID.pts.nonPA, file = file.path(f.path,"brazil_PAs/BRA_grid/GRID.pts.nonPA.RDS")) 
+#GRID.pts.nonPA  <- readRDS(file.path(f.path,"brazil_PAs/BRA_grid/GRID.pts.nonPA.RDS"))
 
-
-STEP3. Sample raster layers at 1 km GEDI grid points in testPA and nonPA areas
-```{r}
-f.path <- "/gpfs/data1/duncansongp/leitoldv"
-
-### read in Brazil testPA and nonPA sampling grids
-GRID.pts.testPA <- readRDS(file.path(f.path,"brazil_PAs/BRA_grid/GRID.pts.testPA.RDS"))
-GRID.pts.nonPA  <- readRDS(file.path(f.path,"brazil_PAs/BRA_grid/GRID.pts.nonPA.RDS"))
-#plot(GRID.pts.nonPA, pch=".")
-#plot(GRID.pts.testPA, pch=".", col="red", add=T)
-testPA_xy <- coordinates(GRID.pts.testPA); colnames(testPA_xy) <- c("x","y")
+#2.3) sample raster layers at 1 km GEDI grid points within nonPA area
 nonPA_xy  <- coordinates(GRID.pts.nonPA);  colnames(nonPA_xy)  <- c("x","y")
-testPA_spdf <- SpatialPointsDataFrame(testPA_xy, data=data.frame(testPA_xy),
-                                      proj4string=CRS("+init=epsg:4326"))
 nonPA_spdf  <- SpatialPointsDataFrame(nonPA_xy, data=data.frame(nonPA_xy),
                                      proj4string=CRS("+init=epsg:4326"))
 
-#------function to compile covariates by extracting rasters at a given spdf coords
-rraster <- function(r,spdf){
-  print(r)
-  ras=raster(r)
-  ras_prj=projectRaster(ras, crs="+init=epsg:4326", method="ngb")
-  ras_ex=raster::extract(ras_prj, spdf@coords, method="simple", factors=F)
-  nm=names(ras)
-  print(nm)
-  return(ras_ex)
-}
+#2.4) compile covariates by extracting rasters at a given spdf coords
+tifs <- list.files(paste(f.path,"/brazil_PAs/BRA_input_vars",sep=""),full.names=T)
+tifs.names <- list.files(paste(f.path,"/brazil_PAs/BRA_input_vars",sep=""),full.names=F)
 
-#list all the covariates in tif format 
-setwd(file.path(f.path,"brazil_PAs/BRA_input_vars/"))
-tifs <- list.files(getwd(),".tif")
-tifs
-
-#Matching covariates:
-# 1. biom (biomes.tif)  ## biome
-# 2. ecoreg (ecoreg.tif)  ## ecoregion
-# 3. land_cover (lc2000.tif)  ## land cover 2000
-# 4. mean_temp (annual_mean_temp.tif)  ## mean annual temperature
-# 5. prec (annual_prec.tif)  ## annual precipitation
-# 6. elevation (bra_dem.tif)  ## terrain elevation
-# 7. slope (bra_slope.tif)  ## terrain slope
-# 8. pop (pop_cnt_2000.tif)  ## population count
-# 9. popden (pop_den_2000.tif)  ## population density
-#10. d2city (dcities.tif)  ## distance to cities
-#11. tt2city (tt2cities.tif)  ## travel time to cities
-#12. d2road (d2roads.tif)  ## distance to roads
-#13. gHMI (median_gHM_bra.tif)  ## global Human Modification Index
-
-#loop through the tifs
-for (i in 1:length(tifs)){
-  print(tifs[i])
-  testPA_spdf = cbind(testPA_spdf, rraster(tifs[i], testPA_spdf))
-  names(testPA_spdf)[i+2] = tifs[i]
-  print(dim(testPA_spdf))
-  nonPA_spdf = cbind(nonPA_spdf, rraster(tifs[i], nonPA_spdf))
-  names(nonPA_spdf)[i+2] = tifs[i]
-  print(dim(nonPA_spdf))
-}
-
-head(testPA_spdf)
+for (j in 1:length(tifs))
+        {
+        ras <- raster(tifs[j])
+        ras_prj <- projectRaster(ras, crs="+init=epsg:4326", method="ngb")
+        ras_ex <- raster::extract(ras_prj, nonPA_spdf@coords, method="simple", factors=F)
+        nm <- names(ras)
+        print(nm)
+        nonPA_spdf <- cbind(nonPA_spdf, ras_ex)
+        names(nonPA_spdf)[j+2] <- tifs.names[j]
+        print(dim(nonPA_spdf))
+        }
 head(nonPA_spdf)
+#saveRDS(nonPA_spdf, file.path(f.path,"brazil_PAs/BRA_matching_points/nonPA_spdf.RDS")) 
+#d_control <- readRDS(file.path(f.path,"brazil_PAs/BRA_matching_points/nonPA_spdf.RDS"))
 
-saveRDS(testPA_spdf, file.path(f.path,"brazil_PAs/BRA_matching_points/testPA_spdf.RDS")) 
-saveRDS(nonPA_spdf, file.path(f.path,"brazil_PAs/BRA_matching_points/nonPA_spdf.RDS")) 
-```
+## set up spatial points data frame for matching process
+ecoreg_key <- read.csv(file.path(f.path,"brazil_PAs/BRA_matching_points/resolve_ecoregions_key.csv"))
 
-
-STEP 4. Prepare .csv data files for point matching process
-```{r}
-library(rgdal)
-library(rgeos)
-library(foreach)
-library(dplyr)
-library(doParallel)
-registerDoParallel(4)
-
-f.path <- "/gpfs/data1/duncansongp/leitoldv"
-
-# Read and combine point data files
-d_control <- readRDS(file.path(f.path,"brazil_PAs/BRA_matching_points/nonPA_spdf.RDS"))
+d_control <- nonPA_spdf
 d_control$status <- as.logical("FALSE")
-d_control <- data.frame(d_control)
-
-d_pa <- readRDS(file.path(f.path,"brazil_PAs/BRA_matching_points/testPA_spdf.RDS"))
-d_pa$status <- as.logical("TRUE")
-d_pa <- data.frame(d_pa)
-
-d <- dplyr::bind_rows(d_control, d_pa) %>%
-     dplyr::rename(
+d_control <- data.frame(d_control) %>%
+dplyr::rename(
            land_cover = lc2000.tif,
            slope = bra_slope.tif,
            elevation = bra_dem.tif,
@@ -237,31 +168,122 @@ d <- dplyr::bind_rows(d_control, d_pa) %>%
            gHMI = median_gHM_bra.tif,
            lon = x,
            lat = y)
+d_control$land_cover <- factor(d_control$land_cover, levels=sequence(7),
+                               labels = c("l1_forest",
+                                          "l2_grassland",
+                                          "l3_agriculture",
+                                          "l4_wetlands",
+                                          "l5_artificial",
+                                          "l6_other land/bare",
+                                          "l7_water"))
+d_control$biom <- factor(d_control$biom,
+                         levels = as.vector(unique(ecoreg_key[,"BIOME_NUM"])),
+                         labels = as.vector(unique(ecoreg_key[,"BIOME_NAME"])))
+d_control$ecoreg <- factor(d_control$ecoreg,
+                           levels = as.vector(ecoreg_key[,"ECO_ID"]),
+                           labels = as.vector(ecoreg_key[,"ECO_NAME"]))
+print(nrow(d_control))
+print(head(d_control))
+saveRDS(d_control, file=paste(f.path,"/brazil_PAs/BRA_matching_points/prepped_control.RDS", sep="")) 
+```
 
-d$land_cover <- factor(d$land_cover,
-                       levels=sequence(7),
-                       labels = c("l1_forest",
-                                  "l2_grassland",
-                                  "l3_agriculture",
-                                  "l4_wetlands",
-                                  "l5_artificial",
-                                  "l6_other land/bare",
-                                  "l7_water"))
 
+STEP3. Loop through all PAs in Brazil:
+      - clip sampling grid to each PA
+      - sample raster layers on each PA grid
+      - save each PA sample into prepped_pa_##.RDS file
+```{r}
+f.path <- "/gpfs/data1/duncansongp/leitoldv"
+
+allPAs <- readOGR(file.path(f.path,"brazil_PAs/BRA_pa/WDPA_Jun2020_BRA-shapefile-polygons.shp"))
+GRID.for.matching <- readRDS(file.path(f.path,"brazil_PAs/BRA_grid/GRID.for.matching.RDS"))
 ecoreg_key <- read.csv(file.path(f.path,"brazil_PAs/BRA_matching_points/resolve_ecoregions_key.csv"))
+tifs <- list.files(paste(f.path,"/brazil_PAs/BRA_input_vars",sep=""),full.names=T)
+tifs.names <- list.files(paste(f.path,"/brazil_PAs/BRA_input_vars",sep=""),full.names=F)
+#
+for(i in 1:length(allPAs)){
+  print(i)
+  testPA <- allPAs[i,]
+  testPA <- spTransform(testPA, "+init=epsg:4326")
+  GRID.pts.testPA <- GRID.for.matching[testPA]
+  
+  if(length(GRID.pts.testPA)>0)
+      {
+      testPA_xy <- coordinates(GRID.pts.testPA)
+      colnames(testPA_xy) <- c("x","y")
+      testPA_spdf <- SpatialPointsDataFrame(testPA_xy, data=data.frame(testPA_xy),
+                                            proj4string=CRS("+init=epsg:4326"))
+      ## sample rasters
+      for (j in 1:length(tifs))
+        {
+        ras <- raster(tifs[j])
+        ras <- crop(ras, testPA)
+        ras_prj <- projectRaster(ras, crs="+init=epsg:4326", method="ngb")
+        ras_ex <- raster::extract(ras, testPA_spdf@coords, method="simple", factors=F)
+        nm <- names(ras)
+        print(nm)
+        testPA_spdf <- cbind(testPA_spdf, ras_ex)
+        names(testPA_spdf)[j+2] <- tifs.names[j]
+        print(dim(testPA_spdf))
+        }
+      ## set up spatial points data frame for matching process
+      d_pa <- testPA_spdf
+      d_pa$status <- as.logical("TRUE")
+      d_pa <- data.frame(d_pa) %>%
+      dplyr::rename(
+           land_cover = lc2000.tif,
+           slope = bra_slope.tif,
+           elevation = bra_dem.tif,
+           pop = pop_cnt_2000.tif,
+           popden = pop_den_2000.tif,
+           mean_temp = annual_mean_temp.tif,
+           prec = annual_prec.tif,
+           biom = biomes.tif,
+           ecoreg = ecoreg.tif,
+           d2city = dcities.tif,
+           tt2city= tt2cities.tif,
+           d2road = d2roads.tif,
+           gHMI = median_gHM_bra.tif,
+           lon = x,
+           lat = y)
+      d_pa$land_cover <- factor(d_pa$land_cover, levels=sequence(7),
+                               labels = c("l1_forest",
+                                          "l2_grassland",
+                                          "l3_agriculture",
+                                          "l4_wetlands",
+                                          "l5_artificial",
+                                          "l6_other land/bare",
+                                          "l7_water"))
+      d_pa$biom <- factor(d_pa$biom,
+                         levels = as.vector(unique(ecoreg_key[,"BIOME_NUM"])),
+                         labels = as.vector(unique(ecoreg_key[,"BIOME_NAME"])))
+      d_pa$ecoreg <- factor(d_pa$ecoreg,
+                           levels = as.vector(ecoreg_key[,"ECO_ID"]),
+                           labels = as.vector(ecoreg_key[,"ECO_NAME"]))
+      print(nrow(d_pa))
+      print(head(d_pa))
 
-d$biom <- factor(d$biom,
-                 levels = as.vector(unique(ecoreg_key[,"BIOME_NUM"])),
-                 labels = as.vector(unique(ecoreg_key[,"BIOME_NAME"])))
+      saveRDS(d_pa, file = paste(f.path,"/brazil_PAs/BRA_matching_points/testPAs/prepped_pa_",
+                                testPA$WDPAID,".RDS", sep="")) 
+    }
+  }
+```
 
-d$ecoreg <- factor(d$ecoreg,
-                   levels = as.vector(ecoreg_key[,"ECO_ID"]),
-                   labels = as.vector(ecoreg_key[,"ECO_NAME"]))
 
-head(d)
-nrow(d)
+STEP4. Set up spatial points data frames (control + each PA) for point matching
+```{r}
+#f.path <- "/gpfs/data1/duncansongp/leitoldv"
+f.path <- "/Users/veronika/leitoldv"
+d_control <- readRDS(file.path(f.path,"brazil_PAs/BRA_matching_points/prepped_control.RDS"))
+d_PAs <- list.files(paste(f.path,"/brazil_PAs/BRA_matching_points/testPAs/",sep=""),full.names=T)
 
-saveRDS(d, file = file.path(f.path,"brazil_PAs/BRA_matching_points/prepped_control_pa.RDS")) 
+for(i in 1:length(d_PAs)){
+  d_pa <- readRDS(d_PAs[1])
+  d <- dplyr::bind_rows(d_control, d_pa)
+  
+  ## bring in matching algorithm from STEP5 here to loop through each PA in d_PAs
+  
+}
 ```
 
 
@@ -498,4 +520,479 @@ save(m_all_sp, file=file_out)
 
 ```
 
+#####STEP6. GEDI data processing after point matching
+```{r}
+# 03- after matching, we obtained one csv with all paired treatment and control with lat/lon 
+  #in this script:
+  #a. * get the bunding box of all the control for extracting GEDI data [not used]
+  #b. * convert all the points to polygons of 1km width [not used]
+  #a2. convert the treatment and control status spdf to a status raster 
+  #b2. extract site status from the abover raster with the GEDI L2ab spdf
+  #c. get the gedi canopy metrics from the l2a and l2b in csv format fro PA and controls
+  #d. use the csv, convert to spdf and run the predict l4a function to apply biomass models
+library(MASS)
+library(foreach)
+library(dplyr)
+library(ggplot2)
+library(optmatch)
+library(doParallel)
+library(RItools)
+library(rgeos)
+library(rlang)
+library(sp)
+library(rgdal)
+library(tidyr)
+library(ggmap)
+library(maps)
+library(mapdata)
 
+#step 0--------------load in the matched results
+setwd("/Users/veronika/leitoldv/Brazil_PAs/BRA_matched/")
+getwd()
+
+pacon1=read_csv("PA1_buffered_test2.csv")  #32737 sp::CRS(paste("+init=epsg:",6933,sep=""))
+
+pa1=pacon1 %>%dplyr::filter(status)
+con1=pacon1 %>% dplyr::filter(!status)
+
+#--------------method 1 [slow]: buffer around each treatment and control point, bsically treating them as polygon--------
+pa1_sp=SpatialPointsDataFrame(coords=pa1[,c("lon","lat")],data=pa1,
+                              proj4string = CRS(" +proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0 ") )
+
+con1_sp=SpatialPointsDataFrame(coords=con1[,c("lon","lat")],data=con1,
+                              proj4string = CRS(" +proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0 ") )
+
+pacon1_sp=SpatialPointsDataFrame(coords=pacon1[,c("lon","lat")],data=pacon1,
+                               proj4string = CRS(" +proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0 ") )
+
+# step 1: get bouding box for both spdfs and extract gedi data as csv
+bbox(pa1_sp)
+# min       max
+# lon 30.595749 31.312415
+# lat -4.981506 -3.273173
+
+bbox(con1_sp)
+# min       max
+# lon  29.67075 35.745747
+# lat -10.07317 -2.023173
+
+LongLatToUTM<-function(x,y,zone){
+  xy <- data.frame(ID = 1:length(x), X = x, Y = y)
+  coordinates(xy) <- c("X", "Y")
+  proj4string(xy) <- CRS("+proj=longlat +datum=WGS84")  ## for example
+  res <- spTransform(xy, CRS(paste("+proj=utm +zone=",zone," ellps=WGS84",sep='')))
+  return(as.data.frame(res))
+}
+
+UTMTOLATLON<-function(x,y,zone){
+  xy <- data.frame(ID = 1:length(x), X = x, Y = y)
+  coordinates(xy) <- c("X", "Y")
+  proj4string(xy) <- CRS(paste("+proj=utm +zone=",zone," ellps=WGS84",sep=''))
+    ## for example
+  res <- spTransform(xy,  CRS("+proj=longlat +datum=WGS84") )
+  return(as.data.frame(res))
+}
+
+# Example
+x<-pa1_sp$lon
+y<-pa1_sp$lat
+pa_sp_ne=LongLatToUTM(x,y,37)
+
+x<-con1_sp$lon
+y<-con1_sp$lat
+con_sp_ne=LongLatToUTM(x,y,37)
+
+# x<-ne$X
+# y<-ne$Y
+# rne=UTMTOLATLON(x,y,37)
+
+#creating polygons around the PAs and controls so the bbox for controls are more buffered
+radius=500 #1km grid 
+
+yPlus <- pa_sp_ne$Y+radius
+xPlus <- pa_sp_ne$X+radius
+yMinus <- pa_sp_ne$Y-radius
+xMinus <- pa_sp_ne$X-radius
+
+yPlus2 <- con_sp_ne$Y+radius
+xPlus2 <-con_sp_ne$X+radius
+yMinus2 <- con_sp_ne$Y-radius
+xMinus2 <- con_sp_ne$X-radius
+# 
+# # calculate polygon coordinates for each plot centroid. 
+square1=cbind(xMinus,yPlus,  # NW corner
+             xPlus, yPlus,  # NE corner
+             xPlus,yMinus,  # SE corner
+             xMinus,yMinus, # SW corner
+             xMinus,yPlus)  # NW corner again - close ploygon
+
+square2=cbind(xMinus2,yPlus2,  # NW corner
+              xPlus2, yPlus2,  # NE corner
+              xPlus2,yMinus2,  # SE corner
+              xMinus2,yMinus2, # SW corner
+              xMinus2,yPlus2)  # NW corner again - close ploygon
+
+
+pa1 <- cbind(id=rownames(pa1), pa1)
+ID=as.character(pa1$id)
+
+con1 <- cbind(id=rownames(con1), con1)
+ID2=as.character(con1$id)
+
+pa1_polys <- SpatialPolygons(mapply(function(poly, id) 
+{
+  xy <- matrix(poly, ncol=2, byrow=TRUE)
+  Polygons(list(Polygon(xy)), ID=id)
+}, 
+split(square, row(square)), ID),
+proj4string = CRS("+init=epsg:32737"))
+
+con1_polys <- SpatialPolygons(mapply(function(poly, id) 
+{
+  xy <- matrix(poly, ncol=2, byrow=TRUE)
+  Polygons(list(Polygon(xy)), ID=id)
+}, 
+split(square2, row(square2)), ID),
+proj4string = CRS("+init=epsg:32737"))
+
+
+
+#step 2: read the pa shapefile and convert to kml for gedi 
+pa1shp=readOGR("testpa1.shp.shp")
+writeOGR(pa1shp, dsn="tza_test_pa1.kml", layer= "tza_test_pa1", driver="KML")
+
+#--------------method 2 [adopted]: try converting the spdf to one status raster method---------------
+xyz=pacon1[,c("lon","lat","status")]
+
+statusr<- rasterFromXYZ(xyz,
+                        crs="+proj=longlat +datum=WGS84" )
+
+statusr
+writeRaster(statusr,"status_raster_wgs84.tif")
+
+#proj to utm +init=epsg:32737 +proj=utm +zone=37 +south +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0
+statusr_prj=projectRaster(statusr,crs="+proj=utm +zone=37 ellps=WGS84 ")
+
+
+#-----------------------use the l4a function to predict AGB on the output GEDI csv------
+#read l2a csv as spdf to pass to the prediction function
+l2acsv=read_csv("testpacon1_l2_a_wk219.csv")
+
+setwd("Y:/duncansongp/amberliang/GEDI_L4A")
+source("Y:/duncansongp/amberliang/GEDI_L4A/l4a_functions_modified.R")
+
+MCD12Q1_path="./data/GEDI_ANCI_PFT_r1000m_EASE2.0_UMD_v1_projection_defined.tif"
+world_region_path="./data/GEDI_ANCI_CONTINENT_r1000m_EASE2.0_UMD_v1_revised_projection_defined.tif"
+  
+
+MCD12Q1 <- raster(MCD12Q1_path) 
+projection(MCD12Q1) <- sp::CRS(paste("+init=epsg:",6933,sep=""))
+
+world_region <- raster(world_region_path)
+projection(world_region) <- sp::CRS(paste("+init=epsg:",6933,sep=""))
+
+spdf <-  SpatialPointsDataFrame(coords=cbind(l2acsv$lon_lowestmode,l2acsv$lat_lowestmode), 
+                                data=l2acsv, proj4string=CRS("+init=epsg:4326"))
+spdf <- spTransform(spdf, CRS("+init=epsg:6933"))
+spdf$MCD12Q1 <- extract(MCD12Q1,spdf)
+spdf$pft <- as.character(spdf$MCD12Q1)
+spdf$pft[which(spdf$pft=="0")] <- "water"
+spdf$pft[which(spdf$pft=="1" | spdf$pft=="3")] <- "ENT"
+spdf$pft[which(spdf$pft=="2")] <- "EBT"
+spdf$pft[which(spdf$pft=="4")] <- "DBT"
+spdf$pft[which(spdf$pft=="5" | spdf$pft=="6")] <- "GS"
+spdf$pft[which(spdf$pft=="7")] <- "cereal crops"
+spdf$pft[which(spdf$pft=="8")] <- "broad-leaf crops"
+spdf$pft[which(spdf$pft=="9")] <- "urban and built up"
+spdf$pft[which(spdf$pft=="10")] <- "snow and ice"
+spdf$pft[which(spdf$pft=="11")] <- "barren or sparse vegetation"
+spdf$pft[which(spdf$pft=="254")] <- "NA"
+spdf$pft[which(spdf$pft=="255")] <- "NA"
+
+spdf$region <- as.character(extract(world_region,spdf))
+spdf$region[which(spdf$region=="1")] <- "Eu"
+spdf$region[which(spdf$egion=="2")] <- "As"
+spdf$region[which(spdf$region=="3")] <- "Au"
+spdf$region[which(spdf$region=="4")] <- "Af"
+spdf$region[which(spdf$region=="6")] <- "SA"
+spdf$region[which(spdf$region=="7")] <- "US"
+
+spdf$stratum <- paste(spdf@data$pft, spdf@data$region,sep="_")
+
+names(spdf)[1:6]=c("shot_number","sel_alg","lon_zg","lat_zg","elev_zg","elev_zt")
+
+names(spdf)[108:118]=c("nmodes","quality","sensitivity","surface","lcover","rx_axamp","quality_flag_1","sd_corrected","rx_algrunflag","zcross","toploc")
+
+x=0:100
+rhn=paste("RH_",x,sep="")
+names(spdf)[7:107]
+#more formating, but not necessary because the agb prediction does not use these rh metrics
+names(spdf)[7:16]=c("RH_00", "RH_01", "RH_02", "RH_03", "RH_04", "RH_05", "RH_06", "RH_07","RH_08","RH_09")
+
+
+rhOffset=20
+metrics=c(seq(10,90,10),98)
+
+percentiles <- paste(seq(0,100,1))
+percentiles[which(nchar(percentiles)==1)] <- paste("0",percentiles[which(nchar(percentiles)==1)],sep="")
+#names(rh)[[2]] <- paste("RH_",percentiles,sep="")
+rh <- rh[,names(rh) %in% paste("RH_",metrics, sep="")]
+
+#names(rh)%>%strsplit("_")%>%sapply( "[[", 2)
+
+pairs <- combn(names(rh2),2)
+interactions <- matrix(NA, nrow=dim(rh2)[1], ncol=dim(pairs)[2])
+dimnames(interactions)[[2]] <- seq(1,dim(interactions)[2])
+
+names(rh)%>%strsplit("_")%>%sapply( "[[", 2)%>%as.numeric()->subname
+
+subname=function(rhm){
+  names(rhm)%>%strsplit("_")%>%sapply( "[[", 2)%>%as.numeric()->numname
+  return(numname)
+  
+}
+pairs <- combn(names(rh),2)
+interactions <- matrix(NA, nrow=dim(rh)[1], ncol=dim(pairs)[2])
+colnames(interactions) <- seq(1,dim(interactions)[2])
+
+for (i in 1:dim(interactions)[2]){
+  
+  c=((rh2[,which(names(rh2)==pairs[1,i])]@data) * (rh2[,which(names(rh2)==pairs[2,i])]@data))
+  interactions[,i] <-c[,1]
+  first <- strsplit(pairs[1,i],"RH_")[[1]][2]
+  second <- strsplit(pairs[2,i],"RH_")[[1]][2]
+  colnames(interactions)[i] <- paste("RH_",first,"_RH_",second,sep="")
+  
+}
+#interactions now contain the int rh_metrics
+spdf2 <- cbind(spdf, interactions)  #too large ran on cluster
+l2b=read_csv("testpacon1_l2_b_wk219.csv")  #read in l2b to merge 
+spdf3=merge(spdf2,l2b,by="shot_number")
+
+
+nwdf=subset(spdf3,!is.na(spdf3$pa_stat))
+
+
+#--------------------------Above is done in cluster--------------------------
+newdf=read_csv("Y:/duncansongp/amberliang/GEDI_L4A/alltanzania_l2_ab_agb.csv")  #output for rstudio, plotting
+spdf=SpatialPointsDataFrame(coords = newdf[,2:3],data = newdf, proj4string=CRS("+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"))
+#dim=11721353, 13
+#spdf <- predictGEDIL4A(spdf=spdf, quality_flag=T, rx_maxamp=T, sd_corrected_multiplier=8, rx_algrunflag=T, zcross=T, toploc=T, sensitivity=T, sensitivity_threshold_lower=0, sensitivity_threshold_upper=1, GEDI_prediction_stratum_flag=T)
+spdf_filtered=spdf[spdf$quality_flag!=0,]
+spdf_filtered%>%dim()   #9347554  left  79%
+spdf_filtered@data[spdf_filtered@data==-9999]=NA
+spdf_filtered%>%dim() 
+
+#subset to tza
+# tza=readOGR("Y:/duncansongp/amberliang/trends.Earth/TZN_admin1/TZA_adm0.shp")
+# spdf_filtered=spdf_filtered[tza,]
+# dim(spdf_filtered) #5288091      13
+
+#extract the pa and control status
+status_r=raster("Y:/duncansongp/amberliang/trends.Earth/TZN_input_vars22/status_raster_wgs84.tif")
+pa_status=raster::extract(status_r,spdf_filtered@coords)
+spdf_filtered$pa_stat=pa_status
+
+#write this lite spdf with one pa status to csv for plotting in qgis
+#write_csv(spdf_filtered@data,"Y:/duncansongp/amberliang/GEDI_L4A/tza_points_with_status.csv")
+
+#filter the AGBD: everything above 1000 will be set to NA
+#spdf_filtered$AGBD[spdf_filtered$AGBD>=600]=NA
+# source("Y:/duncansongp/amberliang/GEDI_L4A/l4a_functions_modified.R")
+# 
+# spdf_agb <- predictGEDIL4A(spdf=spdf_filtered, quality_flag=T, rx_maxamp=T, sd_corrected_multiplier=8, rx_algrunflag=T, zcross=T, toploc=T, sensitivity=T, sensitivity_threshold_lower=0, sensitivity_threshold_upper=1, GEDI_prediction_stratum_flag=T)
+
+###calculate summary stats for the ppt
+spdf_filtered@data %>% 
+  group_by(pa_stat) %>% 
+  summarize(md = median(AGBD, na.rm=T),
+            IQR = IQR(AGBD,na.rm=T))
+
+
+#-----------------------------------------plotting------------------------------------------
+sample_size = spdf_filtered@data %>% group_by(pa_stat) %>% summarize(num=n())
+sample_size
+# 1       0   34096
+# 2       1   29904
+# 3      NA 9283554
+
+spdf_filtered@data %>% 
+  ggplot(aes(x=as.factor(pa_stat),y=RH_98,fill=factor(pa_stat)))+
+  geom_violin(width=1)+
+  geom_boxplot(width=0.1, color="grey", alpha=0.2) +
+  scale_fill_viridis(discrete = TRUE)+
+  coord_cartesian(ylim = c(0,50))
+
+#--------------------------------facet plot for comparing structural metrics------------------------------------
+spdf_filtered@data%>%
+  filter(!is.na(pa_stat)) %>% 
+  mutate(pa_stat=factor(pa_stat)) %>% 
+  dplyr::select(pa_stat,rh_098,rh_075,cover,AGBD)%>%
+  gather(CH_metrics, values, rh_098,rh_075,cover, AGBD)%>%
+  mutate(values=round(values,2))->metric_sub
+dim(metric_sub)
+
+metric_sub$CH_metrics=factor(metric_sub$CH_metrics,levels=c("rh_098","rh_075","cover", "AGBD"))
+
+
+getmode <- function(v) {
+  uniqv <- unique(v)
+  uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+p <- ggplot(metric_sub, aes(CH_metrics, values, fill=pa_stat))
+t=table(metric_sub$pa_stat)  #total metrics for each dist_bin; for legend
+t=t[t!=0]
+names(t)=c("control","treatment")
+metric_sub$CH_metrics%>%unique()%>%length()->n  #how many metrics used
+
+
+p + geom_violin(position = position_dodge(1),width=0.8, trim=F,na.rm=F) + 
+  facet_wrap(~CH_metrics, scale="free",ncol=2)+
+  scale_fill_manual(name = "PA (treatments) vs. Controls", 
+                    labels = c(paste(names(t), "n=", t/n,sep=" ")),
+                    values = viridis(length(t)))+
+  labs(title = "GEDI metrics for test PA1 and controls",subtitle = "Overplot: mode")+
+  stat_summary(
+    fun.y =  function(z) {getmode(z)},
+    size=1, 
+    geom="point", color="red",position = position_dodge(1))
+#stat_summary(fun.y=median, geom="point", size=2, color="red",position = position_dodge(1))
+
+
+p + geom_violin(position = position_dodge(1),width=0.8, trim=F,na.rm=F) + 
+  facet_wrap(~CH_metrics, scale="free",ncol=2)+
+  scale_fill_manual(name = "PA (treatments) vs. Controls", 
+                    labels = c(paste(names(t), "n=", t/n,sep=" ")),
+                    values = viridis(length(t)))+
+  labs(title = "GEDI metrics for test PA1 and controls",subtitle = "Overplot: median and IQR")+
+  stat_summary(
+    fun.ymin = function(z) { quantile(z,0.25) },
+    fun.ymax = function(z) { quantile(z,0.75) },
+    fun.y = median,
+    size=0.3, width=0.3,
+    geom = "pointrange", color="red",position = position_dodge(1))
+
+#----------------plotting over the TZA as well as inset map-------------------
+tza=readOGR("Y:/duncansongp/amberliang/trends.Earth/TZN_admin1/TZA_adm0.shp")
+testpa1=readOGR("Y:/duncansongp/amberliang/trends.Earth/TZN_input_vars22/testpa1.shp.shp")
+tpas=readOGR("Y:/duncansongp/amberliang/trends.Earth/TZN_input_vars22/tanzania_pas.shp.shp")
+
+b=c(seq(0,400,40),430)
+lab=format(b)
+lab[length(b)]="400+"
+lab
+n=sum(!is.na(spdf_filtered$AGBD))
+
+createmapexport=function(data){
+  bbox=bbox(tza)
+  #n=sum(!is.na(data$AGBD))
+  # grab the maps from google
+  bc_big <- get_map(location = bbox, source="stamen", maptype="terrain", crop=FALSE)
+  
+  map2disp=ggmap(bc_big) + 
+    geom_point(data = data, mapping = aes(x = lon_lowestmode, y = lat_lowestmode,color = AGBD), size=0.3, alpha=0.3)+
+    scale_color_gradientn(limits = c(0,430),
+                          colours=c("olivedrab1",
+                                    "olivedrab4", "darkgreen","midnightblue", "red4"),
+                          breaks=b, labels=lab,name="AGBD, n=5285930") +
+    theme(legend.text = element_text(color = "black", size = 8),
+          rect = element_rect(fill = "transparent"))+
+    geom_polygon(data =tza,size=0.5,
+                 aes(long, lat, group = group),
+                 colour = "black", alpha = 0)+
+    geom_polygon(data =tpas,size=0.15,
+                 aes(long, lat, group = group),
+                 colour = "red", alpha = 0)+
+    labs(title = "AGBD calculated from GEDI metrics over Tanzania", 
+         subtitle="Polygon overlay: all PAs")
+  # map2disp
+  map2disk=ggplot2::ggsave(filename="agbd_tza7_allpas.png", plot=map2disp, width=6, height=6,
+                            units = "in", bg = "transparent")
+}
+
+createmapexport(spdf_filtered@data)
+# 
+# scale_color_viridis(begin=1, end=0,option="A", name=paste("AGBD, n=",n, sep=""))+
+
+#-----------------------------plot the GEDI shot distribution map for rh98-----------------------------------
+
+bbox=bbox(testpa1)
+bbox[,1]=bbox[,1]-1
+bbox[,2]=bbox[,2]+0.7
+bbox
+
+createmapexport=function(data){
+  b=c(seq(0,50,10),60)
+  lab=format(b)
+  lab[length(b)]="50+"
+  
+  n=sum(!is.na(spdf_filtered$rh_098))
+  
+  
+  #n=sum(!is.na(data$AGBD))
+  # grab the maps from google
+  bc_big <- get_map(location = bbox, source="stamen", maptype="terrain", crop=FALSE)
+  
+  map2disp=ggmap(bc_big) + 
+    geom_point(data = pa1, mapping = aes(x = lon, y = lat, color=status), color="red", size=0.3, alpha=0.3)+
+    geom_point(data = con1, mapping = aes(x = lon, y = lat,color=status), color="cyan", size=0.3, alpha=0.3)+
+    geom_point(data = data, mapping = aes(x = lon_lowestmode, y = lat_lowestmode,color =rh_098), size=0.3, alpha=0.3)+
+    scale_color_gradientn(limits = c(0,60),
+                          colours=c("khaki","yellowgreen",
+                                    "seagreen1",
+                                    "seagreen3",
+                                    "seagreen4"),
+                          breaks=b, labels=lab,"RH98") +
+    theme(legend.text = element_text(color = "black", size = 8),
+          rect = element_rect(fill = "transparent"))+
+    labs(title = "Max Canopy Height calculated from GEDI metrics over Tanzania", 
+         subtitle="Polygon overlay: test PA")+
+    geom_polygon(data = tpas,size=0.3,
+                 aes(long, lat, group = group),
+                 colour = "red", fill="orange",alpha=0)    
+  # map2disp
+  map2disk=ggplot2::ggsave(filename="rh98_tza_pa1_9.png", plot=map2disp, width=7, height=6,
+                           units = "in", bg = "transparent")
+}
+
+createmapexport(spdf_filtered@data)
+
+#-----------------------------plot the GEDI shot distribution map for cover-----------------------------------
+
+createmapexport=function(data){
+  b=c(seq(0,1,0.2))
+  lab=format(b)
+  
+  n=sum(!is.na(spdf_filtered$cover))
+  
+  
+  #n=sum(!is.na(data$AGBD))
+  # grab the maps from google
+  bc_big <- get_map(location = bbox, source="stamen", maptype="terrain", crop=FALSE)
+  
+  map2disp=ggmap(bc_big) + 
+    geom_point(data = pa1, mapping = aes(x = lon, y = lat),color="red", size=0.3, alpha=0.3)+
+    geom_point(data = con1, mapping = aes(x = lon, y = lat),color="cyan", size=0.3, alpha=0.3)+
+    geom_point(data = data, mapping = aes(x = lon_lowestmode, y = lat_lowestmode,color =cover),size=0.3, alpha=0.3)+
+    scale_color_gradientn(limits = c(0,1),
+                          colours=c("mistyrose","mediumpurple1",
+                                    "mediumpurple2",
+                                    "mediumpurple3",
+                                    "midnightblue"),
+                          breaks=b, labels=lab,name="canopy cover") +
+    theme(legend.text = element_text(color = "black", size = 8),
+          rect = element_rect(fill = "transparent"))+
+    labs(title = "Canopy Cover calculated from GEDI metrics over Tanzania", 
+         subtitle="Polygon overlay: test PA")+
+    geom_polygon(data = tpas,size=0.3,
+                 aes(long, lat, group = group),
+                 colour = "red", fill="orange",alpha=0)    
+  # map2disp
+  map2disk=ggplot2::ggsave(filename="cover_tza_pa1_4.png", plot=map2disp, width=7, height=6,
+                           units = "in", bg = "transparent")
+}
+
+createmapexport(spdf_filtered@data)
+
+```
