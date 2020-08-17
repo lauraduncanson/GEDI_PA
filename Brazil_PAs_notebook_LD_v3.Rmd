@@ -269,25 +269,7 @@ for(i in 1:length(allPAs)){
   }
 ```
 
-
-STEP4. Set up spatial points data frames (control + each PA) for point matching
-```{r}
-#f.path <- "/gpfs/data1/duncansongp/leitoldv"
-f.path <- "/Users/veronika/leitoldv"
-d_control <- readRDS(file.path(f.path,"brazil_PAs/BRA_matching_points/prepped_control.RDS"))
-d_PAs <- list.files(paste(f.path,"/brazil_PAs/BRA_matching_points/testPAs/",sep=""),full.names=T)
-
-for(i in 1:length(d_PAs)){
-  d_pa <- readRDS(d_PAs[1])
-  d <- dplyr::bind_rows(d_control, d_pa)
-  
-  ## bring in matching algorithm from STEP5 here to loop through each PA in d_PAs
-  
-}
-```
-
-
-STEP 5. Point matching adapted from Alex Zvoleff's original script (https://github.com/azvoleff/wocat_matching) by Mengyu Liang  ##modified by VL for Brazil
+STEP4. Load in the matching functions; Point matching adapted from Alex Zvoleff's original script (https://github.com/azvoleff/wocat_matching) by Mengyu Liang  ##modified by VL for Brazil
 ```{r}
 library(MASS)
 library(foreach)
@@ -301,23 +283,10 @@ library(rlang)
 library(sp)
 library(rgdal)
 library(tidyr)
+library(magrittr)
 registerDoParallel(6)
 
 options("optmatch_max_problem_size"=Inf)
-
-f.path <- "/gpfs/data1/duncansongp/leitoldv"
-data_folder <- file.path(f.path,"brazil_PAs/BRA_matching_points/")
-
-###############################################################################
-# Load point data
-
-d <- readRDS(file.path(data_folder, "prepped_control_pa.RDS"))
-d <- data.frame(d)
-head(d)
-nrow(d)
-
-###############################################################################
-# Clean data for matching
 
 # Function to allow rbinding dataframes with foreach even when some dataframes 
 # may not have any rows
@@ -399,8 +368,11 @@ match_wocat <- function(df) {
                                              error=function(e) return(FALSE))
                     if (subdim_works) {
                       m <- fullmatch(dists, min.controls=1, max.controls=1, data=this_d)
+                      prematch_d <- this_d
+                      this_d$matched <- m
                       this_d <- this_d[matched(m), ]
-                  
+                      
+                                      
                     } else {
                       this_d <- data.frame()
                     }
@@ -409,116 +381,138 @@ match_wocat <- function(df) {
                     if (nrow(this_d) == 0) {
                       return(NULL)
                     } else {
-                      return(this_d)
+                      match_results <- list("match_obj" = m, "df" = this_d, "func"=f, "prematch_d"=prematch_d)
+                      return(match_results)
                     }
                   }
   return(ret)
 }
 
-###############################################################################
-# Match by approaches
-
-#filter controls based on propensity scores 
-d_all <- dplyr::select(d,lat,lon,status, land_cover, biom, ecoreg, elevation, slope,
-             mean_temp,prec, gHMI) 
-
-d_all$status <- ifelse(d_all$status==TRUE,1,0)
-d_com <-d_all[complete.cases(d_all), ]  #filter away non-complete cases w/ NA, only 70% of the data
-#calculate the propensity scores & filter out controls not overlapping w/ treatment propensity scores
-ps <- glm(status ~ mean_temp + prec + elevation + slope+ gHMI,data = d_com)
-# boxplot(ps)  #check the distribution of propensity scores for treatment and controls
-#filter out the controls with propensity scores outside of the overlapping region
-d_com$propensity_score <- fitted(ps)
-d_sep <- d_com %>% group_by(status)
-d_sep_range <- d_com %>% group_by(status)%>% 
-  summarise(propmin= min(propensity_score), promax=max(propensity_score)) 
-print(d_sep_range)
-#  status  propmin promax
-#    <dbl>    <dbl>  <dbl>
-# 1      0 -0.0216  0.108 
-# 2      1  0.00561 0.0570
-d_filtered <- d_sep %>% 
-  filter(status==1 | between(propensity_score,d_sep_range$propmin[2],d_sep_range$promax[2])) %>% 
-  ungroup() #59% percent data left
-#check balance score prior to matching
-pre <-   xBalance(status ~ mean_temp + prec + elevation + slope+ gHMI, 
-                  data =d_filtered,
-                  report = c("adj.means", "std.diffs",
-                             "z.scores", "chisquare.test"))  #prior to matching chisqure 31033
-print(pre$overall) #chisquare 6865
-# plot(pre)
-d_filtered$status <- ifelse(d_filtered$status==1,TRUE,FALSE)
+```
 
 
-#treatment dataset
-d_wocat_all <- filter(d_filtered, status)
-d_wocat_all_sp <- SpatialPointsDataFrame(dplyr::select(d_wocat_all, lon, lat),
-                                         d_wocat_all,
-                                         proj4string=CRS('+init=epsg:4326'))
-#control dataset
-d_control_all <- filter(d_filtered, !status)
 
-#sample the control dataset to the size of the sample dataset, keep unsampled ids to iterate until full number of matches found
-n_treatment <- nrow(d_wocat_all)
-n_sample <- (n_treatment*7)
-ids_all <- seq(1,nrow(d_control_all))
-
-
-startTime <- Sys.time()
-n_matches <- 0
+STEP5. Set up spatial points data frames (control + each PA) for point matching
+```{r}
+f.path <- "/gpfs/data1/duncansongp/leitoldv"
+f.path <- "Y:/duncansongp/leitoldv"
+d_control <- readRDS(file.path(f.path,"brazil_PAs/BRA_matching_points/prepped_control.RDS"))
+d_control <-d_control[complete.cases(d_control), ]  #filter away non-complete cases w/ NA in control set
+d_PAs <- list.files(paste(f.path,"/brazil_PAs/BRA_matching_points/testPAs/",sep=""),full.names=T)[1:9]
+Bscore <- data.frame(id=character(0),matched=character(0),chisquare=numeric(0),df=numeric(0),p.value=numeric(0))
 m_all2_out <- data.frame()
-while(n_matches < n_treatment){
-  n_ids <- length(ids_all)
-  if(n_ids > n_sample){
-    sample_ids <- sample(ids_all, n_sample)
-    d_control_sample <- d_control_all[sample_ids,]
-    ids_all <- ids_all[-sample_ids]
-  
-    d_control_all_sp <- SpatialPointsDataFrame(dplyr::select(d_control_sample, lon, lat),
-                                           d_control_sample,
-                                           proj4string=CRS('+init=epsg:4326'))
-  
-    #plot(d_control_all_sp, pch=".")
-    #plot(d_wocat_all_sp, pch=".", col="red", add=T)
 
-    # All approaches
-    new_d <- rbind(d_wocat_all_sp, d_control_all_sp)@data
-  
-    #outside of the match_wocat function check the balance
-    f <- status ~ elevation + slope + mean_temp + prec + gHMI
-    #do a glm here to throw out definitely not control data based on low propensity score (they weren't going to be matching anyways)
-    
-    #create a smaller distance matrix
-    
-    m_all <- match_wocat(new_d)
-    m_all2 <- m_all%>%unique()
-    n_matches_temp <- nrow(m_all2)
-    if(!is.null(n_matches_temp)){
-      n_matches <- n_matches + nrow(m_all2)
-      m_all2_out <- rbind(m_all2, m_all2_out)
-      print(nrow(m_all2_out))
-    }
-  } else {n_treatment <- n_matches}
-}
+startTime_loop <- Sys.time()
+for(i in 1:length(d_PAs)){
+   id_pa <- d_PAs[i] %>%stringr::str_extract(., "\\-*\\d+\\d*")
+   d_pa <- readRDS(d_PAs[i])
+   d_pa <-d_pa[complete.cases(d_pa), ]  #filter away non-complete cases w/ NA in control set
+   d <- dplyr::bind_rows(d_control, d_pa)
+   ## bring in matching algorithm from STEP5 here to loop through each PA in d_PAs
+   #filter controls based on propensity scores 
+   d_all <- dplyr::select(d,lat,lon,status, land_cover, biom, ecoreg, elevation, slope,
+                mean_temp,prec, gHMI) 
+   
+   d_all$status <- ifelse(d_all$status==TRUE,1,0)
+   
+   #calculate the propensity scores & filter out controls not overlapping w/ treatment propensity scores
+   ps <- glm(status ~ mean_temp + prec + elevation + slope+ gHMI,data = d_all)
+   # boxplot(ps)  #check the distribution of propensity scores for treatment and controls
+   #filter out the controls with propensity scores outside of the overlapping region
+   d_all$propensity_score <- fitted(ps)
+   d_sep <- d_all %>% dplyr::group_by(status)
+   d_sep_range <- d_all %>% dplyr::group_by(status)%>% 
+     dplyr::summarise(propmin= min(propensity_score), promax=max(propensity_score)) 
+   print(d_sep_range)
+   d_filtered <- d_sep %>% 
+     filter(status==1 | between(propensity_score,d_sep_range$propmin[2],d_sep_range$promax[2])) %>% 
+     ungroup() 
+   
+   d_filtered$status <- ifelse(d_filtered$status==1,TRUE,FALSE)
+ 
+   #treatment dataset
+   d_wocat_all <- filter(d_filtered, status)
+   d_wocat_all_sp <- SpatialPointsDataFrame(dplyr::select(d_wocat_all, lon, lat),
+                                             d_wocat_all,
+                                             proj4string=CRS('+init=epsg:4326'))
+   #control dataset
+   d_control_all <- filter(d_filtered, !status)
+   
+   #sample the control dataset to the size of the sample dataset, keep unsampled ids to iterate until full number of matches found
+   n_treatment <- nrow(d_wocat_all)
+   t <- ifelse(round(nrow(d_control_all)/n_treatment)<=7, round(nrow(d_control_all)/n_treatment),7)
+   n_sample <- round(n_treatment*t)    #now the n_control is 1.4 times the number of n_treatment, 7 will set the if ststament below to flase
+   ids_all <- seq(1,nrow(d_control_all))
+   
+   
+   startTime <- Sys.time()
+   n_matches <- 0
+   
+   while(n_matches < n_treatment){
+     n_ids <- length(ids_all)
+     if(n_ids > n_sample){
+       sample_ids <- sample(ids_all, n_sample)
+       d_control_sample <- d_control_all[sample_ids,]
+       ids_all <- ids_all[-sample_ids]
+     
+       d_control_all_sp <- SpatialPointsDataFrame(dplyr::select(d_control_sample, lon, lat),
+                                              d_control_sample,
+                                              proj4string=CRS('+init=epsg:4326'))
+     
+       #plot(d_control_all_sp, pch=".")
+       #plot(d_wocat_all_sp, pch=".", col="red", add=T)
+   
+       # All approaches
+       new_d <- rbind(d_wocat_all_sp, d_control_all_sp)@data
+     
+       #outside of the match_wocat function check the balance
+       f <- status ~ elevation + slope + mean_temp + prec + gHMI
+       #do a glm here to throw out definitely not control data based on low propensity score (they weren't going to be matching anyways)
+       
+       #create a smaller distance matrix
+       m_all <- tryCatch(match_wocat(new_d),error=function(e) return(NULL))
+       # m_all <- match_wocat(new_d)
+       m_all2 <- tryCatch(m_all[1,],error=function(e) return(NULL))
+       # m_all2 <- m_all[1,]
+       n_matches_temp <- tryCatch(nrow(m_all2$df),error=function(e) return(NULL))
+       # n_matches_temp <- nrow(m_all2$df)
+       if(!is.null(n_matches_temp)){
+         n_matches <- n_matches + nrow(m_all2$df)
+         m_all2$df$pa_id <- rep(id_pa,n_matches_temp)
+         m_all2_out <- rbind(m_all2$df, m_all2_out)
+         print(nrow(m_all2_out))
+       } else {
+         n_treatment <- 0  #break out the while loop if there are no controls to be matched with 
+       }
+     } else {n_treatment <- n_matches}
+   }
+   
+   tElapsed <- Sys.time()-startTime
+   print(tElapsed)
+   
+   #check balance score post matching
+   #check balance score prior to matching
+   post <- tryCatch(xBalance(update(m_all2$func, ~ . + strata(m_all2$match_obj)), 
+                      data =m_all2$prematch_d,
+                      report = c("all"))%>%
+     .$overall%>%
+     tibble::rownames_to_column(., "matched"),
+     error=function(e) return(NULL))
+   # post <-   xBalance(update(m_all2$func, ~ . + strata(m_all2$match_obj)), 
+   #                    data =m_all2$prematch_d,
+   #                    report = c("all"))%>%
+   #   .$overall%>%
+   #   tibble::rownames_to_column(., "matched")
+   Bscore <- dplyr::bind_rows(Bscore, c(post, id=id_pa))
+ }
+tElapsed_loop <- Sys.time()-startTime_loop
+print(tElapsed_loop)
 
-tElapsed <- Sys.time()-startTime
-print(tElapsed)
-
-m_all_sp <- SpatialPointsDataFrame(coords=m_all2_out[,c( "lon","lat")],
-                                          m_all2_out,
-                                          proj4string=CRS('+init=epsg:4326'))
-
-#plot(d_control_all_sp, pch=".")
-#plot(d_wocat_all_sp, pch=".", col="red", add=T)
-
-#plot(d_control_all_sp, pch=".")
-#points(d_wocat_all_sp, pch=".", col="red")
-#points(m_all_sp, col="blue")
-file_out <- '/gpfs/data1/duncansongp/laura_docs/brazil_test_out.Rdata'
-save(m_all_sp, file=file_out)
-#writeOGR(m_all_sp, data_folder, "wocat_macthed_bra", "ESRI Shapefile", overwrite=TRUE)
+Bscore %>% dim()  #Bscore contains the before and after matching overall balance scores
+m_all2_out$pa_id %>% table()   #m_all2_out contains all the matching results for each PA
 
 ```
+
 
 #####STEP6. GEDI data processing after point matching
 ```{r}
