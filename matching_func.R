@@ -1,0 +1,318 @@
+options(warn=-1)
+options(dplyr.summarise.inform = FALSE)
+
+ppath <- "/gpfs/data1/duncansongp/amberliang/PADDDtracker_DataReleaseV2_May2019/"
+poly <- readOGR(paste(ppath,"PADDDtracker_DataReleaseV2_May2019_Poly.shp",sep=""),verbose = F) %>% spTransform(., CRS("+init=epsg:6933"))
+pts <- readOGR(paste(ppath,"PADDDtracker_DataReleaseV2_May2019_Pts.shp",sep=""), verbose = F) %>% spTransform(., CRS("+init=epsg:6933"))
+poly$Location_K <- toupper(poly$Location_K)
+poly <- poly[poly$Location_K =="Y",]
+poly$EventType <- as.numeric(poly$EventType) 
+poly$EventType[is.na(poly$EventType)] <- 0
+
+pts$Location_K <- toupper(pts$Location_K)
+pts <- pts[pts$Location_K =="Y",]
+pts$EventType <- as.numeric(pts$EventType) 
+pts$EventType[is.na(pts$EventType)] <- 0
+`%notin%` <- Negate(`%in%`)
+
+# Function to allow rbinding dataframes with foreach even when some dataframes 
+# may not have any rows
+foreach_rbind <- function(d1, d2) {
+  if (is.null(d1) & is.null(d2)) {
+    return(NULL)
+  } else if (!is.null(d1) & is.null(d2)) {
+    return(d1)
+  } else if (is.null(d1) & !is.null(d2)) {
+    return(d2)
+  } else  {
+    return(rbind(d1, d2))
+  }
+}
+
+match_wocat <- function(df) {
+  
+  registerDoParallel(4)
+  
+  options("optmatch_max_problem_size"=Inf)
+  
+  # Filter out countries without at least one treatment unit or without at
+  # least one control unit
+  # df <- df %>%
+  #   filter(complete.cases(.)) %>%
+  
+  #the following lines do nothing because only one PA at a time
+  #mutate(n_treatment=sum(status),
+  #       n_control=sum(!status)) %>%
+  #the next line doesn't do 
+  #filter(n_treatment >= 1, n_control >= 1)
+  
+  # Note custom combine to handle iterations that don't return any value
+  #test nested foreach loops
+  ret <- foreach (this_lc=unique(df$land_cover),
+                  .packages=c('optmatch', 'dplyr'),
+                  .combine=foreach_rbind, .inorder=FALSE) %dopar% {
+                    this_d<-df
+                    d_wocat <- filter(this_d, status)
+                    # Filter out climates and land covers that don't appear in the wocat
+                    # sample, and drop these levels from the factors
+                    this_d <- filter(this_d,
+                                     land_cover %in% unique(d_wocat$land_cover),
+                                     wwfbiom %in% unique(d_wocat$wwfbiom),
+                                     wwfecoreg %in% unique(d_wocat$wwfecoreg))
+                    
+                    this_d$land_cover <- droplevels(this_d$land_cover)
+                    this_d$wwfbiom <- droplevels(this_d$wwfbiom)
+                    this_d$wwfecoreg <- droplevels(this_d$wwfecoreg)
+                    table(this_d$status)
+                    f <- status ~ mean_temp + prec + elevation + slope+ d2road + d2city + popden + tt2city
+                    # Can't stratify by land cover or climate if they only have one level
+                    if (nlevels(this_d$land_cover) >= 2) {
+                      f <- update(f, ~ . + strata(land_cover))
+                    } else {
+                      f <- update(f, ~ . - land_cover)
+                    }
+                    if (nlevels(this_d$wwfbiom) >= 2) {
+                      f <- update(f, ~ . + strata(wwfbiom))
+                    } else {
+                      f <- update(f, ~ . - wwfbiom)
+                    }
+                    if (nlevels(this_d$wwfecoreg) >= 2) {
+                      f <- update(f, ~ . + strata(wwfecoreg))
+                    } else {
+                      f <- update(f, ~ . - wwfecoreg)
+                    }
+                    
+                    if (nrow(d_wocat) > 2) {
+                      model <- glm(f, data=this_d)
+                      dists <- match_on(model, data=this_d)
+                      # cat(iso3, "propensity score matching is used\n")
+                    } else {
+                      # Use Mahalanobis distance if there aren't enough points to run a
+                      # glm
+                      dists <- match_on(f, data=this_d)
+                      # cat(iso3, "Mahalanobis distance matching is used\n")
+                    }
+                    #potentially drop caliper line; will cut down dists matrix but not the speed issue
+                    # dists <- caliper(dists, 2)
+                    
+                    # If the controls are too far from the treatments (due to the caliper) 
+                    # then the matching may fail. Can test for this by seeing if subdim 
+                    # runs successfully
+                    subdim_works <- tryCatch(is.data.frame(subdim(dists)),
+                                             error=function(e) return(FALSE))
+                    if (subdim_works) {
+                      m <- fullmatch(dists, min.controls=1, max.controls=1, data=this_d)
+                      prematch_d <- this_d
+                      this_d$matched <- m
+                      this_d <- this_d[matched(m), ]
+                      
+                      
+                    } else {
+                      this_d <- data.frame()
+                    }
+                    # Need to handle the possibility that there were no matches for this 
+                    # treatment, meaning this_d will be an empty data.frame
+                    if (nrow(this_d) == 0) {
+                      return(NULL)
+                    } else {
+                      match_results <-this_d
+                      return(match_results)
+                    }
+                  }
+  
+  stopImplicitCluster()
+  return(ret)
+}
+
+propensity_filter <- function(pa_df, d_control_local){
+  pa_df <-pa_df[complete.cases(pa_df), ]  #filter away non-complete cases w/ NA in control set
+  d <- dplyr::bind_rows(d_control_local, pa_df)
+  ## bring in matching algorithm from STEP5 here to loop through each PA in d_PAs
+  #filter controls based on propensity scores 
+  d_all <- dplyr::select(d, lat, lon, UID, status, land_cover, wwfbiom, wwfecoreg, elevation, slope,
+                         mean_temp, prec,  d2road, d2city,  popden, tt2city, 
+                         DESIG_ENG, REP_AREA, PA_STATUS, PA_STATUSYR, GOV_TYPE, OWN_TYPE, MANG_AUTH) 
+  
+  d_all$status <- ifelse(d_all$status==TRUE,1,0)
+  
+  #calculate the propensity scores & filter out controls not overlapping w/ treatment propensity scores
+  ps <- glm(status ~ mean_temp + prec + elevation + slope+ d2road + d2city + popden + tt2city,data = d_all)
+  # boxplot(ps)  #check the distribution of propensity scores for treatment and controls
+  #filter out the controls with propensity scores outside of the overlapping region
+  d_all$propensity_score <- fitted(ps)
+  d_sep <- d_all %>% dplyr::group_by(status)
+  d_sep_range <- d_all %>% dplyr::group_by(status)%>% 
+    dplyr::summarise(propmin= min(propensity_score), promax=max(propensity_score)) 
+  # cat(iso3, "Filtering the control sites by overlaping with the treatment PS\n")
+  d_filtered <- d_sep %>% 
+    filter(status==1 | between(propensity_score,d_sep_range$propmin[2],d_sep_range$promax[2])) %>% 
+    ungroup() 
+  
+  d_filtered$status <- ifelse(d_filtered$status==1,TRUE,FALSE)
+  
+  return(d_filtered)
+}
+
+isoPadddRas <- function(poly, pts, rtemplate){
+  
+  if((iso3 %in% unique(poly$ISO3166))&&(iso3 %notin% unique(pts$ISO3166))){
+    # print("in poly")
+    polysub <- poly[poly$ISO3166==iso3,]
+    polysubr <- rasterize(polysub,rtemplate,background=NA, field=polysub$EventType)
+    names(polysubr) <- paste("PADDD",iso3,sep="_")
+    return(polysubr)
+    
+  } else if ((iso3 %notin% unique(poly$ISO3166))&&(iso3 %in% unique(pts$ISO3166))){
+    # print("in pts")
+    ptssub <- pts[pts$ISO3166==iso3,]
+    ptssubr <- rasterize(ptssub@coords[,1:2,drop=F],rtemplate,background=NA, field=ptssub$EventType)
+    names(ptssubr) <- paste("PADDD",iso3,sep="_")
+    return(ptssubr)
+    
+  } else if ((iso3 %in% unique(poly$ISO3166))&&(iso3 %in% unique(pts$ISO3166))){
+    # print("in both")
+    polysub <- poly[poly$ISO3166==iso3,]
+    polysubr <- rasterize(polysub,rtemplate,background=NA, field=polysub$EventType)
+    ptssub <- pts[pts$ISO3166==iso3,]
+    ptssubr <- rasterize(ptssub@coords[,1:2,drop=F],rtemplate,background=NA, field=ptssub$EventType)
+    m <- merge(polysubr,ptssubr)
+    names(m) <- paste("PADDD",iso3,sep="_")
+    return(m)
+  } else {
+    # print("in neither")
+    return(NULL)
+  }
+}
+
+matched2ras <- function(matched_df){
+  cat(iso3,"converting the matched csv to a raster stack for extraction\n")
+  matched_pts <- SpatialPointsDataFrame(coords=matched_df[,c("lon","lat")],
+                                        proj4string=CRS("+init=epsg:4326"), data=matched_df) %>%spTransform(., CRS("+init=epsg:6933"))
+  matched_pts$pa_id <- as.integer(matched_pts$pa_id)
+  # matched_pts$REP_AREA <- matched_pts$REP_AREA%>% as.numeric()
+  # matched_pts$PA_STATUSYR <- matched_pts$PA_STATUSYR%>% as.integer()
+  # 
+  cols <- c("REP_AREA","PA_STATUSYR","DESIG_ENG","GOV_TYPE","OWN_TYPE","wwfbiom","wwfecoreg")
+  matched_pts@data[,cols] %<>% lapply(function(x) as.numeric(x))
+  matched_pts@data[,cols][is.na(matched_pts@data[,cols])]<- 0
+  
+  # #create an empty raster with 1km resolution
+  r <- crop(MCD12Q1, extent(buffer(matched_pts,10000))) 
+  continent <- crop(world_region,extent(buffer(matched_pts,10000)))
+  names(r) <- "pft"
+  names(continent) <- "region"
+  
+  padddr <- isoPadddRas(poly=poly,pts=pts, rtemplate = r)
+  
+  matched_ras <- rasterize(matched_pts@coords, r,
+                           field=matched_pts@data[,c("status","pa_id","REP_AREA","PA_STATUSYR","DESIG_ENG","OWN_TYPE","GOV_TYPE",
+                                                     "wwfbiom","wwfecoreg")],background=NA)%>% 
+    stack(r) %>% stack(continent) 
+  
+  if (!is.null(padddr)){
+    matched_ras %>% stack(padddr)
+  }
+  
+  return(matched_ras)
+}
+
+convertFactor <- function(matched0, exgedi){
+  exgedi$pft <- as.character(exgedi$pft)
+  exgedi$pft[which(exgedi$pft=="0")] <- "water"
+  exgedi$pft[which(exgedi$pft=="1" | exgedi$pft=="3")] <- "ENT"
+  exgedi$pft[which(exgedi$pft=="2")] <- "EBT"
+  exgedi$pft[which(exgedi$pft=="4")] <- "DBT"
+  exgedi$pft[which(exgedi$pft=="5" | exgedi$pft=="6")] <- "GS"
+  exgedi$pft[which(exgedi$pft=="7")] <- "cereal crops"
+  exgedi$pft[which(exgedi$pft=="8")] <- "broad-leaf crops"
+  exgedi$pft[which(exgedi$pft=="9")] <- "urban and built up"
+  exgedi$pft[which(exgedi$pft=="10")] <- "snow and ice"
+  exgedi$pft[which(exgedi$pft=="11")] <- "barren or sparse vegetation"
+  exgedi$pft[which(exgedi$pft=="254")] <- "NA"
+  exgedi$pft[which(exgedi$pft=="255")] <- "NA"
+  
+  exgedi$region <- as.character(exgedi$region)
+  exgedi$region[which(exgedi$region=="0")] <- "Ocean"
+  exgedi$region[which(exgedi$region=="1")] <- "Eu"
+  exgedi$region[which(exgedi$region=="2")] <- "As"
+  exgedi$region[which(exgedi$region=="3")] <- "Au"
+  exgedi$region[which(exgedi$region=="4")] <- "Af"
+  exgedi$region[which(exgedi$region=="6")] <- "SA"
+  exgedi$region[which(exgedi$region=="7")] <- "US"
+  
+  exgedi$stratum <- paste(exgedi$pft, exgedi$region,sep="_")
+  
+  exgedi$GOV_TYPE <- exgedi$GOV_TYPE %>% 
+    factor(levels=seq(length(levels(matched0$GOV_TYPE))),
+           labels=levels(matched0$GOV_TYPE))
+  
+  exgedi$OWN_TYPE <- exgedi$OWN_TYPE %>% 
+    factor(levels=seq(length(levels(matched0$OWN_TYPE))),
+           labels=levels(matched0$OWN_TYPE))  
+  
+  exgedi$DESIG_ENG <- exgedi$DESIG_ENG %>% 
+    factor(levels=seq(length(levels(matched0$DESIG_ENG))),
+           labels=levels(matched0$DESIG_ENG))  
+  
+  exgedi$wwfbiom <- exgedi$wwfbiom %>% 
+    factor(levels = as.vector(unique(ecoreg_key[,"BIOME"])),
+           labels = as.vector(unique(ecoreg_key[,"BIOME_NAME"])))
+  
+  
+  exgedi$wwfecoreg <- factor(exgedi$wwfecoreg,
+                        levels = as.vector(ecoreg_key[,"ECO_ID"]),
+                        labels = as.vector(ecoreg_key[,"ECO_NAME"]))
+  
+  tryCatch(exgedi$paddd <- as.character(exgedi$paddd), error=function(e) return(NULL))
+  tryCatch(exgedi$paddd[which(exgedi$paddd=="1")] <- "Downgrade", error=function(e) return(NULL))
+  tryCatch(exgedi$paddd[which(exgedi$paddd=="2")] <- "Degazette", error=function(e) return(NULL))
+  tryCatch(exgedi$paddd[which(exgedi$paddd=="3")] <- "Downsize", error=function(e) return(NULL))
+ 
+  
+  return(exgedi)
+}
+
+subdfExport <- function(filtered_df){
+  #export invidual pa results
+  spt2 <- split(filtered_df, filtered_df$pa_id)
+  
+  dfl <- lapply(names(spt2), function(x){
+  
+    if(dim(spt2[[x]])[1]>0){
+      control_sub <- spt2[[x]][spt2[[x]]$status==0,]
+      treat_sub <-  spt2[[x]][spt2[[x]]$status==1,]
+      ncontrol <- nrow(control_sub)
+      ntreat <- nrow(treat_sub)
+      if (ntreat-ncontrol > 0){
+        newtreatid <- sample(ntreat, ncontrol)
+        newtreat <- treat_sub[newtreatid,]
+        spt2_new <- rbind(newtreat, control_sub)
+      } else if (ntreat - ncontrol< 0){
+        newcontrolid <- sample(ncontrol, ntreat)
+        newcontrol <- control_sub[newcontrolid,]
+        spt2_new <- rbind(newcontrol, treat_sub)
+      } else if (ntreat-ncontrol==0){
+        spt2_new <- spt2[[x]]
+      } else if (ntreat==0 || ncontrol==0){
+        spt2_new=NA
+      }
+      biom <- spt2_new$wwfbiom %>% unique() %>% as.character() %>% gsub('\\b(\\pL)\\pL{4,}|.','\\U\\1',.,perl = TRUE)
+      if(length(biom)>1){
+        biom <- paste(c(biom), collapse="&")
+      }
+      # print(biom)
+      write.csv(spt2_new, file=paste(f.path,"WDPA_GEDI_extract/",iso3,"_wk",gediwk,"/",iso3,"_PA_",unique(spt2_new$pa_id),"_",biom,".csv", sep=""))
+      return(spt2_new)
+    }
+  })
+  
+  total_df <- do.call("rbind", dfl) 
+  cat("Exported individual PAs results for ", iso3, "\n")
+  
+  return(total_df)
+}
+
+getmode <- function(v,na.rm) {
+  uniqv <- unique(v)
+  uniqv[which.max(tabulate(match(v, uniqv)))]
+}
