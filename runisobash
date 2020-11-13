@@ -1,0 +1,22 @@
+#!/bin/bash
+
+j=0
+
+while getopts l:w:n:p: flag 
+do 
+	case "${flag}" in 
+		l) clist=${OPTARG};;
+		w) wk=${OPTARG};;
+		n) N=${OPTARG};;
+		p) proc=${OPTARG};;
+	esac
+done 
+
+
+
+for country in $clist
+do 
+	Rscript global_process.R $country $wk $proc & 
+	((++j==N)) && { j=0; wait; }	
+done
+
