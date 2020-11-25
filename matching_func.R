@@ -2,8 +2,8 @@ options(warn=-1)
 options(dplyr.summarise.inform = FALSE)
 
 ppath <- "/gpfs/data1/duncansongp/amberliang/PADDDtracker_DataReleaseV2_May2019/"
-poly <- readOGR(paste(ppath,"PADDDtracker_DataReleaseV2_May2019_Poly.shp",sep=""),verbose = F) %>% spTransform(., CRS("+init=epsg:6933"))
-pts <- readOGR(paste(ppath,"PADDDtracker_DataReleaseV2_May2019_Pts.shp",sep=""), verbose = F) %>% spTransform(., CRS("+init=epsg:6933"))
+poly <- readOGR(paste(ppath,"PADDDtracker_DataReleaseV2_May2019_Poly.shp",sep=""),verbose = FALSE) %>% spTransform(., CRS("+init=epsg:6933"))
+pts <- readOGR(paste(ppath,"PADDDtracker_DataReleaseV2_May2019_Pts.shp",sep=""), verbose = FALSE) %>% spTransform(., CRS("+init=epsg:6933"))
 poly$Location_K <- toupper(poly$Location_K)
 poly <- poly[poly$Location_K =="Y",]
 poly$EventType <- as.numeric(poly$EventType) 
@@ -85,12 +85,10 @@ match_wocat <- function(df) {
                     if (nrow(d_wocat) > 2) {
                       model <- glm(f, data=this_d)
                       dists <- match_on(model, data=this_d)
-                      # cat(iso3, "propensity score matching is used\n")
                     } else {
                       # Use Mahalanobis distance if there aren't enough points to run a
                       # glm
                       dists <- match_on(f, data=this_d)
-                      # cat(iso3, "Mahalanobis distance matching is used\n")
                     }
                     #potentially drop caliper line; will cut down dists matrix but not the speed issue
                     # dists <- caliper(dists, 2)
@@ -115,7 +113,7 @@ match_wocat <- function(df) {
                     if (nrow(this_d) == 0) {
                       return(NULL)
                     } else {
-                      match_results <-this_d
+                      match_results <- list("match_obj" = m, "df" = this_d, "func"=f, "prematch_d"=prematch_d)
                       return(match_results)
                     }
                   }
@@ -159,14 +157,14 @@ isoPadddRas <- function(poly, pts, rtemplate){
     # print("in poly")
     polysub <- poly[poly$ISO3166==iso3,]
     polysubr <- rasterize(polysub,rtemplate,background=NA, field=polysub$EventType)
-    names(polysubr) <- paste("PADDD",iso3,sep="_")
+    names(polysubr) <- "PADDD"
     return(polysubr)
     
   } else if ((iso3 %notin% unique(poly$ISO3166))&&(iso3 %in% unique(pts$ISO3166))){
     # print("in pts")
     ptssub <- pts[pts$ISO3166==iso3,]
-    ptssubr <- rasterize(ptssub@coords[,1:2,drop=F],rtemplate,background=NA, field=ptssub$EventType)
-    names(ptssubr) <- paste("PADDD",iso3,sep="_")
+    ptssubr <- rasterize(ptssub@coords[,1:2,drop=FALSE],rtemplate,background=NA, field=ptssub$EventType)
+    names(ptssubr) <- "PADDD"
     return(ptssubr)
     
   } else if ((iso3 %in% unique(poly$ISO3166))&&(iso3 %in% unique(pts$ISO3166))){
@@ -174,25 +172,33 @@ isoPadddRas <- function(poly, pts, rtemplate){
     polysub <- poly[poly$ISO3166==iso3,]
     polysubr <- rasterize(polysub,rtemplate,background=NA, field=polysub$EventType)
     ptssub <- pts[pts$ISO3166==iso3,]
-    ptssubr <- rasterize(ptssub@coords[,1:2,drop=F],rtemplate,background=NA, field=ptssub$EventType)
+    ptssubr <- rasterize(ptssub@coords[,1:2,drop=FALSE],rtemplate,background=NA, field=ptssub$EventType)
     m <- merge(polysubr,ptssubr)
-    names(m) <- paste("PADDD",iso3,sep="_")
+    names(m) <- "PADDD"
     return(m)
   } else {
     # print("in neither")
-    return(NULL)
+    empr <- rtemplate
+    values(empr) <- NA
+    names(empr) <- "PADDD"
+    return(empr)
   }
 }
 
 matched2ras <- function(matched_df){
   cat(iso3,"converting the matched csv to a raster stack for extraction\n")
+  
   matched_pts <- SpatialPointsDataFrame(coords=matched_df[,c("lon","lat")],
-                                        proj4string=CRS("+init=epsg:4326"), data=matched_df) %>%spTransform(., CRS("+init=epsg:6933"))
+                                          proj4string=CRS("+init=epsg:4326"), data=matched_df) %>% 
+    spTransform(., CRS("+init=epsg:6933"))
+  
+  
   matched_pts$pa_id <- as.integer(matched_pts$pa_id)
+  matched_pts$status <- as.logical(matched_pts$status)
   # matched_pts$REP_AREA <- matched_pts$REP_AREA%>% as.numeric()
   # matched_pts$PA_STATUSYR <- matched_pts$PA_STATUSYR%>% as.integer()
   # 
-  cols <- c("REP_AREA","PA_STATUSYR","DESIG_ENG","GOV_TYPE","OWN_TYPE","wwfbiom","wwfecoreg")
+  cols <- c("REP_AREA","PA_STATUSYR","DESIG_ENG.x","GOV_TYPE","OWN_TYPE","wwfbiom","wwfecoreg")
   matched_pts@data[,cols] %<>% lapply(function(x) as.numeric(x))
   matched_pts@data[,cols][is.na(matched_pts@data[,cols])]<- 0
   
@@ -205,40 +211,31 @@ matched2ras <- function(matched_df){
   padddr <- isoPadddRas(poly=poly,pts=pts, rtemplate = r)
   
   matched_ras <- rasterize(matched_pts@coords, r,
-                           field=matched_pts@data[,c("status","pa_id","REP_AREA","PA_STATUSYR","DESIG_ENG","OWN_TYPE","GOV_TYPE",
-                                                     "wwfbiom","wwfecoreg")],background=NA)%>% 
-    stack(r) %>% stack(continent) 
-  
-  if (!is.null(padddr)){
-    matched_ras %>% stack(padddr)
-  }
+                           field=matched_pts@data[,c("status","pa_id","REP_AREA","PA_STATUSYR","DESIG_ENG.x","GOV_TYPE",
+                                                     "OWN_TYPE","wwfbiom","wwfecoreg")],background=NA)%>% 
+    stack(r) %>% stack(continent) %>% stack(padddr)
   
   return(matched_ras)
 }
 
 convertFactor <- function(matched0, exgedi){
   exgedi$pft <- as.character(exgedi$pft)
-  exgedi$pft[which(exgedi$pft=="0")] <- "water"
-  exgedi$pft[which(exgedi$pft=="1" | exgedi$pft=="3")] <- "ENT"
-  exgedi$pft[which(exgedi$pft=="2")] <- "EBT"
-  exgedi$pft[which(exgedi$pft=="4")] <- "DBT"
-  exgedi$pft[which(exgedi$pft=="5" | exgedi$pft=="6")] <- "GS"
-  exgedi$pft[which(exgedi$pft=="7")] <- "cereal crops"
-  exgedi$pft[which(exgedi$pft=="8")] <- "broad-leaf crops"
-  exgedi$pft[which(exgedi$pft=="9")] <- "urban and built up"
-  exgedi$pft[which(exgedi$pft=="10")] <- "snow and ice"
-  exgedi$pft[which(exgedi$pft=="11")] <- "barren or sparse vegetation"
-  exgedi$pft[which(exgedi$pft=="254")] <- "NA"
-  exgedi$pft[which(exgedi$pft=="255")] <- "NA"
   
+  exgedi$pft <- factor(exgedi$pft, levels=sequence(6),
+                                 labels = c("ENT",
+                                            "EBT",
+                                            "ENT",
+                                            "DBT",
+                                            "GS",
+                                            "GS"))
   exgedi$region <- as.character(exgedi$region)
-  exgedi$region[which(exgedi$region=="0")] <- "Ocean"
-  exgedi$region[which(exgedi$region=="1")] <- "Eu"
-  exgedi$region[which(exgedi$region=="2")] <- "As"
-  exgedi$region[which(exgedi$region=="3")] <- "Au"
-  exgedi$region[which(exgedi$region=="4")] <- "Af"
-  exgedi$region[which(exgedi$region=="6")] <- "SA"
-  exgedi$region[which(exgedi$region=="7")] <- "US"
+  exgedi$region <- factor(exgedi$region, levels=c(1:4,6,7),
+                       labels = c("Eu",
+                                  "As",
+                                  "Au",
+                                  "Af",
+                                  "SA",
+                                  "US"))
   
   exgedi$stratum <- paste(exgedi$pft, exgedi$region,sep="_")
   
@@ -250,24 +247,23 @@ convertFactor <- function(matched0, exgedi){
     factor(levels=seq(length(levels(matched0$OWN_TYPE))),
            labels=levels(matched0$OWN_TYPE))  
   
-  exgedi$DESIG_ENG <- exgedi$DESIG_ENG %>% 
-    factor(levels=seq(length(levels(matched0$DESIG_ENG))),
-           labels=levels(matched0$DESIG_ENG))  
+  exgedi$DESIG_ENG.x <- exgedi$DESIG_ENG.x %>% 
+    factor(levels=seq(length(levels(matched0$DESIG_ENG.x))),
+           labels=levels(matched0$DESIG_ENG.x))  
   
   exgedi$wwfbiom <- exgedi$wwfbiom %>% 
-    factor(levels = as.vector(unique(ecoreg_key[,"BIOME"])),
-           labels = as.vector(unique(ecoreg_key[,"BIOME_NAME"])))
+    factor(levels=seq(length(levels(matched0$wwfbiom))),
+           labels=levels(matched0$wwfbiom))  
   
   
-  exgedi$wwfecoreg <- factor(exgedi$wwfecoreg,
-                        levels = as.vector(ecoreg_key[,"ECO_ID"]),
-                        labels = as.vector(ecoreg_key[,"ECO_NAME"]))
+  exgedi$wwfecoreg <- exgedi$wwfecoreg %>% 
+    factor(levels=seq(length(levels(matched0$wwfecoreg))),
+           labels=levels(matched0$wwfecoreg))  
   
   tryCatch(exgedi$paddd <- as.character(exgedi$paddd), error=function(e) return(NULL))
   tryCatch(exgedi$paddd[which(exgedi$paddd=="1")] <- "Downgrade", error=function(e) return(NULL))
   tryCatch(exgedi$paddd[which(exgedi$paddd=="2")] <- "Degazette", error=function(e) return(NULL))
   tryCatch(exgedi$paddd[which(exgedi$paddd=="3")] <- "Downsize", error=function(e) return(NULL))
- 
   
   return(exgedi)
 }
