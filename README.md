@@ -48,3 +48,8 @@ GEDI data processing after point matching
 
 ### STEP6:
 Plotting treatment (PA) vs control (non-PA) comparison
+
+
+### Examples for running the runisobash for global PA matching is 
+- At the command prompt first run'chmod 775 runisobash' to run runisobashinto executable 
+- Then run './runisobash -l "TCD TUR AGO" -w 275 -n 3 -p 10' to run countries with iso3 codes TCD, TUR, AGO on 3(-n) processors and each initiates 10(-p) cores to prarallelize across 10PAs; -w indicates the process uses GEDI data up till week 275 and this is reflected in the output file names
