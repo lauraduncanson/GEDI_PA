@@ -14,10 +14,6 @@ countries.folder <- paste(f.path,"WDPA_countries/shp/", sep="")
 WDPA_table <- read.csv(paste(f.path,"WDPA_countries_table3.csv",sep=""))
 IDs <- as.character(WDPA_table[,"ISO3"])
 ##
-#for(i in 1:length(IDs)){
-#  dir.create(paste(f.path,"WDPA_gedi_",GEDI_data,"/",IDs[i],sep=""))
-#}
-##
 ################################################################################
 ## l2a
 ################################################################################
@@ -168,6 +164,10 @@ for(i in 1:length(IDs)){
   }
   sink()
 }
+#
+#######################################################
+#for(i in 1:length(IDs)){dir.create(paste(f.path,"WDPA_gedi_",GEDI_data,"/",IDs[i],sep=""))}
+#######################################################
 
 
 
