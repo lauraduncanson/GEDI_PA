@@ -9,7 +9,7 @@ library(rgeos)
 library(rgdal)
 ##
 #f.path <- "/Users/veronika/leitoldv/"
-f.path <- "/gpfs/data1/duncansongp/leitoldv/"
+f.path <- "/gpfs/data1/duncansongp/GEDI_global_PA/"
 countries.folder <- paste(f.path,"WDPA_countries/shp/", sep="")
 WDPA_table <- read.csv(paste(f.path,"WDPA_countries_table3.csv",sep=""))
 IDs <- as.character(WDPA_table[,"ISO3"])
@@ -21,8 +21,8 @@ IDs <- as.character(WDPA_table[,"ISO3"])
 ################################################################################
 ## l2a
 ################################################################################
-startT <- "--start_time 2019-10-03"  ### day of year 275
-endT <- "--end_time 2020-02-19"  ### day of year 050
+startT <- "--start_time 2020-02-20"  ### day of year 051
+endT <- "--end_time 2020-04-15"  ### day of year 106
 GEDI_data <- "l2a"
 GEDI_folder <- paste(f.path,"WDPA_gedi_",GEDI_data,"/",sep="")
 #
@@ -96,8 +96,8 @@ for(i in 1:length(IDs)){
 ################################################################################
 ## l2b
 ################################################################################
-startT <- "--start_time 2019-10-03"  ### day of year 275
-endT <- "--end_time 2020-02-19"  ### day of year 050
+startT <- "--start_time 2020-02-20"  ### day of year 051
+endT <- "--end_time 2020-04-15"  ### day of year 106
 GEDI_data <- "l2b"
 GEDI_folder <- paste(f.path,"WDPA_gedi_",GEDI_data,"/",sep="")
 #
