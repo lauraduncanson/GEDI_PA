@@ -92,8 +92,8 @@ for(i in 1:length(IDs)){
 ################################################################################
 ## l2b
 ################################################################################
-startT <- "--start_time 2020-02-20"  ### day of year 051
-endT <- "--end_time 2020-04-15"  ### day of year 106
+#startT <- "--start_time 2020-02-20"  ### day of year 051
+#endT <- "--end_time 2020-04-15"  ### day of year 106
 GEDI_data <- "l2b"
 GEDI_folder <- paste(f.path,"WDPA_gedi_",GEDI_data,"/",sep="")
 #
