@@ -6,9 +6,7 @@ Scripts for analyzing GEDI data in global protected areas
 ### STEP0a.
 Subset global GEDI data (gedi_subsets_by_country.R creates python scripts to subset 1º tiles country-by-country; then run python scripts on cluster to create subsets of L2A and L2B data)
 ### STEP0b.
-Filter out “bad quality” GEDI data (gedi_filter_L2A.R keeps only quality == 1 & sensitivity >= 0.95 shots)
-### STEP0c.
-Match up L2B data with quality L2A shots to create combined data files (gedi_filter_L2A+L2B.R)
+Filter out “bad quality” GEDI data (keep only quality == 1 & sensitivity >= 0.95 shots) and match up L2B data with quality L2A shots to create combined data files (gedi_filter_L2A+L2B.R)
 
 ## PROCESSING: global_process.R (also using “matching_func.R”)
 
