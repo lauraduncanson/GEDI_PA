@@ -166,9 +166,14 @@ for(i in 1:length(IDs)){
 }
 #
 #######################################################
-#for(i in 1:length(IDs)){dir.create(paste(f.path,"WDPA_gedi_",GEDI_data,"/",IDs[i],sep=""))}
+# set up directories where GEDI L2A and L2B subsets will be saved
 #######################################################
-
+# f.path <- "/gpfs/data1/duncansongp/GEDI_global_PA/"
+# WDPA_table <- read.csv(paste(f.path,"WDPA_countries_table3.csv",sep=""))
+# IDs <- as.character(WDPA_table[,"ISO3"])
+# for(i in 1:length(IDs)){dir.create(paste(f.path,"WDPA_gedi_l2a/",IDs[i],sep=""))}
+# for(i in 1:length(IDs)){dir.create(paste(f.path,"WDPA_gedi_l2b/",IDs[i],sep=""))}
+#######################################################
 
 
 
