@@ -26,7 +26,7 @@ if (length(args)==0) {
 
 cat("Step 0: Loading global variables to process country", iso3,"with GEDI data until week", gediwk, "\n")
 
-f.path <- "/gpfs/data1/duncansongp/leitoldv/"
+f.path <- "/gpfs/data1/duncansongp/GEDI_global_PA/"
 exclude <- c("mean_gHM","pop_cnt_2000")
 tifs <- list.files(paste(f.path,"WDPA_input_vars_iso3/",iso3,"/",sep=""),full.names=T) %>% .[str_detect(., exclude, negate = TRUE)]
 tifs.name <- str_match(tifs, "//\\s*(.*?)\\s*.tif")[,2]
@@ -243,7 +243,8 @@ if(length(dir(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs","/",
 cat("Step 4: Performing matching for", iso3,"\n")
 d_control_local <- readRDS(file=paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_prepped_control_wk",gediwk,".RDS",sep=""))
 d_control_local <-d_control_local[complete.cases(d_control_local), ]  #filter away non-complete cases w/ NA in control set
-d_PAs <- list.files(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs/", sep=""),pattern=gediwk,full.names=F)
+#d_PAs <- list.files(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs/", sep=""),pattern=gediwk,full.names=F)
+d_PAs <- list.files(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs/", sep=""), pattern=paste("wk",gediwk,sep=""), full.names=F)
 
 registerDoParallel(mproc)
 cat("using number of cores:",getDoParWorkers(),"\n")
