@@ -245,6 +245,7 @@ d_control_local <- readRDS(file=paste(f.path,"WDPA_matching_points/",iso3,"/",is
 #d_PAs <- list.files(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs/", sep=""),pattern=gediwk,full.names=F)
 
 if(!dir.exists(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",sep=""))){
+  print("EXISTS")
   dir.create(file.path(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",sep="")))
   d_PAs <- list.files(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs/", sep=""), pattern=paste("wk",gediwk,sep=""), full.names=F)
 } else if (dir.exists(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",sep=""))){
@@ -254,9 +255,13 @@ if(!dir.exists(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",sep="
   d_PAs<- list.files(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs/", sep=""), pattern=paste("wk",gediwk,sep=""), full.names=F) 
   d_PA_id <- d_PAs %>% readr::parse_number()
   runPA_id <- d_PA_id[!(d_PA_id %in% matched_PAid)]
-  Pattern2 <-  paste(runPA_id, collapse="|")
-  runPA <-  d_PAs[grepl(Pattern2,d_PAs)]
-  d_PAs <- runPA
+  if (length(runPA_id)>0){
+    Pattern2 <-  paste(runPA_id, collapse="|")
+    runPA <-  d_PAs[grepl(Pattern2,d_PAs)]
+    d_PAs <- runPA
+  } else {
+    d_PAs <- NULL
+  }
 }
 
 registerDoParallel(mproc)
@@ -270,7 +275,7 @@ foreach(this_pa=d_PAs,.combine = foreach_rbind, .packages=c('sp','magrittr', 'dp
   d_pa <- readRDS(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs/",pa, sep=""))
   cat(iso3, "pa no.",id_pa, "has",nrow(d_pa)," of treatment \n")
   d_filtered_prop <- tryCatch(propensity_filter(d_pa, d_control_local), error=function(e) return(NA))  #return a df of control and treatment after complete cases and propensity filters are applied
-  print(dim(d_filtered_prop))
+  cat("Propensity score filtered DF dimension is",dim(d_filtered_prop),"\n")
   d_wocat_all <- tryCatch(filter(d_filtered_prop, status),error=function(e) return(NA))
   d_control_all <- tryCatch(filter(d_filtered_prop, !status),error=function(e) return(NA))
   # 
@@ -339,7 +344,7 @@ foreach(this_pa=d_PAs,.combine = foreach_rbind, .packages=c('sp','magrittr', 'dp
                                           prematch_chisquare= Unadj_chisquare, prematch_df= Unadj_df, prematch_pvalue=Unadj_p.value),
                           error=function(e) return(NULL))
 
-  cat(paste("Dimension of matched: ", dim(m_all2_out),"\n"))
+  cat(paste("Dimension of matched: ", dim(m_all2_out),"for PA ",id_pa,"\n"))
   saveRDS(match_score, file=paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",iso3,"_pa_", id_pa,"_matching_results_wk",gediwk,".RDS", sep=""))
   # # write.csv(match_score, file=paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",iso3,"_pa_", id_pa,"_matching_results_wk",gediwk,".csv", sep=""))
   # # return(match_score)
