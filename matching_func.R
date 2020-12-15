@@ -129,7 +129,7 @@ propensity_filter <- function(pa_df, d_control_local){
   #filter controls based on propensity scores 
   d_all <- dplyr::select(d, lat, lon, UID, status, land_cover, wwfbiom, wwfecoreg, elevation, slope,
                          mean_temp, prec,  d2road, d2city,  popden, tt2city, 
-                         DESIG_ENG, REP_AREA, PA_STATUS, PA_STATUSYR, GOV_TYPE, OWN_TYPE, MANG_AUTH) 
+                         DESIG_ENG) 
   
   d_all$status <- ifelse(d_all$status==TRUE,1,0)
   
