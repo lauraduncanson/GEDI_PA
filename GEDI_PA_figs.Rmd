@@ -1,0 +1,60 @@
+---
+title: "GEDI PA Figures"
+output: html_notebook
+---
+
+This notebook produces the figures for the Paper 'Global protected areas are effective for preserving forest structure and carbon'.
+
+Fig 1: Methods flowchart
+```{r}
+#Created Externally by V Leitold
+```
+
+Fig 2: Global GEDI height, RH50, cover & biomass
+```{r}
+#Placeholder exists, but we will create our own version with the final data used 
+```
+
+Fig 3: Methods workflow for paper
+```{r}
+#Created externally by V Leitold
+```
+
+Fig 4: Number of GEDI shots per 1 km pixel
+```{r}
+#Created externally by M Liang
+```
+
+Fig 5: Comparison of four metrics for globe
+```{r}
+
+```
+
+Fig 6: Comparison of four metrics for globe, divided by continent
+```{r}
+
+```
+
+Fig 7: Comparison of four metrics for the top 10 countries with most PAs (or similar)
+```{r}
+
+```
+
+Fig 8: Comparison of four metrics for different biome classes
+```{r}
+
+```
+
+Fig 9: Country-level PA distribution figure (e.g. Brazil)
+```{r}
+#Created externally by V Leitold
+```
+
+Fig 10: Relative importance of variables to determine biomass preservation efficacy 
+```{r}
+
+```
+
+
+
+
