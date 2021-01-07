@@ -22,11 +22,217 @@ Fig 3: Methods workflow for paper
 
 Fig 4: Number of GEDI shots per 1 km pixel
 ```{r}
-#Created externally by M Liang
+#Coded  by M Liang
+
+fpath <- "/gpfs/data1/duncansongp/leitoldv/WDPA_GEDI_extract2"
+dir(fpath)
+
+shotInCell <- data.frame()
+shotf=list.files(fpath, pattern="gedi_shots_per_1km", full.names = TRUE)
+vars=c("x","y","gshot","status","pid","iso3")
+
+for (d in shotf){
+  print(d)
+  cout <- read.csv(d, header = FALSE, col.names = vars)
+  cout <- cout[!is.na(cout$pid),] 
+  iso3 <- cout$iso3 %>% unique() %>% na.omit()
+  print(iso3)
+  tmp <-  data.frame(iso3=cout$iso3, status=as.factor(cout$status), gshot=cout$gshot, stringsAsFactors=F)
+  shotInCell <- shotInCell %>% rbind(tmp, stringsAsFactors=F)
+}
+
+print(dim(shotInCell))
+
+# plot
+p <- shotInCell %>%
+  ggplot( aes(x=gshot)) +
+  geom_histogram( binwidth=1, fill="#69b3a2", color="#e9ecef", alpha=0.9) +
+  labs(title = "GEDI shots in each matched 1km cell",subtitle = paste("Binwidth = 1; n =", format(nrow(shotInCell), big.mark=","), "iso3 =", length(unique(shotInCell$iso3)), sep=" ")) +
+  theme_ipsum() +
+  theme(
+    plot.title = element_text(size=15)
+  )+
+  labs(x = "Number of GEDI shots in 1km Pixel")
+p
+
+#GEDI shots distribution per pa
+shotInPA <- data.frame()
+shotpaf=list.files(fpath, pattern="pa_stats_summary", full.names = TRUE)
+vars2=c("count_0", "count_1", "meanrh98_0","meanrh98_1", "sdrh98_0",    "sdrh98_1",    "meanrh75_0", "meanrh75_1",  "sdrh75_0",    "sdrh75_1",   
+        "meanrh50_0",  "meanrh50_1",  "sdrh50_0",    "sdrh50_1",    "meanrh25_0",  "meanrh25_1",  "sdrh25_0",    "sdrh25_1",    "meanpai_0",   "meanpai_1",  
+        "sdpai_0",     "sdpai_1",     "meancov_0",   "meancov_1",   "sdcov_0",     "sdcov_1",     "meanagbd_0",  "meanagbd_1",  "sdagbd_0",    "sdagbd_1",   
+        "wwfecoreg_0", "wwfecoreg_1", "REGION_0",    "REGION_1",    "PADDD_0",     "PADDD_1",     "iso3",        "pa_id"  )
+
+for (d in shotpaf){
+  print(d)
+  cout <- read.csv(d,header = FALSE, col.names = vars2)
+  cout <- cout[!is.na(cout$pa_id),] 
+  iso3 <- cout$iso3 %>% unique() %>% na.omit()
+  print(iso3)
+  tmp <-  data.frame(iso3=cout$iso3,pid=cout$pa_id, gshot=cout$count_1, stringsAsFactors=F)
+  shotInPA <- shotInPA %>% rbind(tmp, stringsAsFactors=F)
+
+}  
+
+print(dim(shotInPA))
+
+# plot
+p2 <- shotInPA %>%
+  ggplot( aes(x=gshot)) +
+  geom_histogram( binwidth=500, fill="#FA8072", color="#FA8072", alpha=0.6) +
+  labs(title = "GEDI shots in each matched PA",subtitle = paste("Binwidth = 500; ","n =", format(nrow(shotInPA), big.mark=","), "; iso3 =", length(unique(shotInPA$iso3)), sep=" ")) +
+  theme_ipsum() +
+  theme(
+    plot.title = element_text(size=15)
+  )+
+  labs(x = "Number of GEDI shots in each PA")
+p2
 ```
 
 Fig 5: Comparison of four metrics for globe
 ```{r}
+
+fpath <- "/Volumes/gsdata1/duncansongp/GEDI_global_PA/WDPA_GEDI_extract2"
+dir(fpath)
+
+shotInCell <- data.frame()
+shotf=list.files(fpath, pattern="gedi_shots_per_1km", full.names = TRUE)
+vars=c("x","y","gshot","status","pid","iso3")
+
+for (d in shotf){
+  print(d)
+  cout <- read.csv(d, header = FALSE, col.names = vars)
+  cout <- cout[!is.na(cout$pid),] 
+  iso3 <- cout$iso3 %>% unique() %>% na.omit()
+  print(iso3)
+  tmp <-  data.frame(iso3=cout$iso3, status=as.factor(cout$status), gshot=cout$gshot, stringsAsFactors=F)
+  shotInCell <- shotInCell %>% rbind(tmp, stringsAsFactors=F)
+}
+
+print(dim(shotInCell))
+
+# plot
+p <- shotInCell %>%
+  ggplot( aes(x=gshot)) +
+  geom_histogram( binwidth=1, fill="#69b3a2", color="#e9ecef", alpha=0.9) +
+  labs(title = "GEDI shots in each matched 1km cell",subtitle = paste("Binwidth = 1; n =", format(nrow(shotInCell), big.mark=","), "iso3 =", length(unique(shotInCell$iso3)), sep=" ")) +
+  theme_ipsum() +
+  theme(
+    plot.title = element_text(size=15)
+  )+
+  labs(x = "Number of GEDI shots in 1km Pixel")
+p
+
+#GEDI shots distribution per pa
+shotInPA <- data.frame()
+shotpaf=list.files(fpath, pattern="pa_stats_summary", full.names = TRUE)
+vars2=c("count_0", "count_1", "meanrh98_0","meanrh98_1", "sdrh98_0",    "sdrh98_1",    "meanrh75_0", "meanrh75_1",  "sdrh75_0",    "sdrh75_1",   
+        "meanrh50_0",  "meanrh50_1",  "sdrh50_0",    "sdrh50_1",    "meanrh25_0",  "meanrh25_1",  "sdrh25_0",    "sdrh25_1",    "meanpai_0",   "meanpai_1",  
+        "sdpai_0",     "sdpai_1",     "meancov_0",   "meancov_1",   "sdcov_0",     "sdcov_1",     "meanagbd_0",  "meanagbd_1",  "sdagbd_0",    "sdagbd_1",   
+        "wwfecoreg_0", "wwfecoreg_1", "REGION_0",    "REGION_1",    "PADDD_0",     "PADDD_1",     "iso3",        "pa_id"  )
+
+for (d in shotpaf){
+  print(d)
+  cout <- read.csv(d,header = FALSE, col.names = vars2)
+  cout <- cout[!is.na(cout$pa_id),] 
+  iso3 <- cout$iso3 %>% unique() %>% na.omit()
+  print(iso3)
+  tmp <-  data.frame(iso3=cout$iso3,pid=cout$pa_id, gshot=cout$count_1, stringsAsFactors=F)
+  shotInPA <- shotInPA %>% rbind(tmp, stringsAsFactors=F)
+
+}  
+
+print(dim(shotInPA))
+
+
+
+# plot
+p2 <- shotInPA %>%
+  ggplot( aes(x=gshot)) +
+  geom_histogram( binwidth=500, fill="#FA8072", color="#FA8072", alpha=0.6) +
+  labs(title = "GEDI shots in each matched PA",subtitle = paste("Binwidth = 500; ","n =", format(nrow(shotInPA), big.mark=","), "; iso3 =", length(unique(shotInPA$iso3)), sep=" ")) +
+  theme_ipsum() +
+  theme(
+    plot.title = element_text(size=15)
+  )+
+  labs(x = "Number of GEDI shots in each PA")
+p2
+
+
+#check biomass distribution
+sub <- data.frame()
+dd <- list.dirs(path = fpath, full.names = TRUE, recursive=FALSE)
+
+for (d in dd){
+  df <- list.files(d, pattern = ".RDS", full.names = TRUE)
+  # print(length(df))
+  for (f in df){
+    
+    tmp <- readRDS(f) %>% 
+      dplyr::filter(!is.na(pa_id)) %>% 
+      dplyr::select(status, rh_098, AGBD, cover, pai)
+    sub <- sub %>% rbind(tmp, stringsAsFactors=FALSE)
+    print(dim(sub))
+  }
+}
+
+
+sub%>%
+  filter(!is.na(status)) %>% 
+  mutate(pa_stat=factor(status)) %>% 
+  dplyr::select(pa_stat, rh_098,cover,pai, AGBD)%>%
+  gather(GEDI_metrics, values, rh_098,cover,pai, AGBD)%>%
+  mutate(values=round(values,2))->metric_sub
+dim(metric_sub)
+metric_sub$GEDI_metrics=factor(metric_sub$GEDI_metrics,levels=c("rh_098","cover","pai", "AGBD"),
+                               labels = c("Max Canopy Height", 
+                                          "Plant Area Index (PAI)", "Canopy Cover","Aboveground Biomass Density (AGBD)"))
+getmode <- function(v) {
+  uniqv <- unique(v)
+  uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+p <- ggplot(metric_sub, aes(GEDI_metrics, values, fill=pa_stat))
+t=table(metric_sub$pa_stat)  #total metrics for each dist_bin; for legend
+t=t[t!=0]
+names(t)=c("control","Protected/treated")
+metric_sub$GEDI_metrics%>%unique()%>%length()->n  #how many metrics used
+#source in the custome panel plot scaling script
+source("/gpfs/data1/duncansongp/amberliang/scripts/individule_facet_scale.R")
+p2=p + geom_violin(position = position_dodge(1),width=0.8, trim=T,na.rm=F) + 
+  facet_wrap(~GEDI_metrics, scale="free",ncol=2)+
+  scale_fill_manual(name = "Protected vs. Controls", 
+                    labels = c(paste(names(t), "n=", format(t/n, big.mark=","),sep=" ")),
+                    values =c("#ebac3f","#f7e874"))+
+  labs(title = "GEDI metrics and AGBD for Moyowosi Game Reserve vs. controls",subtitle = "Stats overlay: median and IQR (red), mean (blue), mode (green)")+
+  stat_summary(
+    fun.ymin = function(z) { quantile(z,0.25) },
+    fun.ymax = function(z) { quantile(z,0.75) },
+    fun.y = median,
+    size=0.3, width=0.3,
+    geom = "pointrange", color="#e41a1c",position = position_dodge(1))+
+  stat_summary(
+    fun.y =  function(z) {mean(z, na.rm=T)},
+    size=1.5, 
+    geom="point", color="#377eb8",shape=17,position = position_dodge(1))+
+  stat_summary(
+    fun.y =  function(z) {getmode(z)},
+    size=1.5,
+    geom="point", color="#4daf4a",shape=15, position = position_dodge(1))+
+  facet_wrap_custom(~GEDI_metrics, scales = "free", ncol = 2, scale_overrides = list(
+    scale_override(1, scale_y_continuous(limits = c(0,45))),
+    scale_override(2, scale_y_continuous(limits = c(0,1))),
+    scale_override(3, scale_y_continuous(limits = c(0,3))),
+    scale_override(4, scale_y_continuous(limits = c(0,200)))))
+
+ggplot2::ggsave(filename="/gpfs/data1/duncansongp/amberliang/trends.Earth/git/GEDI_PA/iso71_test_violin.png", plot=p2, width=10, height=12,
+                units = "in", bg = "transparent")
+
+ps=sub %>% dplyr::select(status, AGBD) %>% mutate(status=as.factor(status))
+psp=ggplot(data=ps, aes(x=AGBD, group=status, fill=status)) +
+  geom_density(adjust=1.5,  alpha=.4) +
+  theme_ipsum() 
+ggplot2::ggsave(filename="/gpfs/data1/duncansongp/amberliang/trends.Earth/git/GEDI_PA/iso71_test_agbd_dist.png", plot=p2, width=10, height=12,
+                units = "in", bg = "transparent")
 
 ```
 
