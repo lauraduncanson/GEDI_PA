@@ -44,96 +44,113 @@ source("/gpfs/data1/duncansongp/amberliang/trends.Earth/git/GEDI_PA/matching_fun
 # if (file.exists(paste(f.path,"WDPA_GEDI_extract/",iso3,"_wk",gediwk,"/",iso3,"_gedi_extracted_matching_wk",gediwk,".RDS", sep=""))){
 cat(paste("Step 5: Performing WK ",gediwk,"GEDI extraction for", iso3,"\n"))
 
-matchedpaf <- list.files(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,sep=""), pattern=".RDS", full.names = FALSE)
+
 
 if(!dir.exists(paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,"/",sep=""))){
-  registerDoParallel(cores=round(mproc))
-  getDoParWorkers()
-  startTime <- Sys.time()
-  foreach(this_rds=matchedpaf, .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','raster')) %dopar% {
-    cat("Extracting for no. ", match(this_rds,matchedpaf),"pa out of", length(matchedpaf),"\n")
-    id_pa <- this_rds %>% str_split("_") %>% unlist %>% .[3]
-    matched <- readRDS(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",iso3,"_pa_", id_pa,"_matching_results_wk",gediwk,".RDS", sep=""))
-    if (is.null(matched)==TRUE) {
-      cat("Matched result is null for PA", id_pa, "quitting...\n")
-    } else if (!is.null(matched)==TRUE){
-      mras  <- tryCatch(matched2ras(matched),
-                        error=function(cond){
-                          cat("Matched result is likely null for country", iso3,"pa", id_pa, "dimension of the match is", dim(matched),"\n")
-                          # writeLines("Matched results is likely null for country", paste(f.path,"WDPA_log/",iso3,"_log_matching.txt", sep=""))
-                          return(NULL)}) #convert the macthed df to a raster stack 
-      if(table(mras$status[])[2]==0 | table(mras$status[])[1]==0){
-        cat("Rasterized results unbalanced for PA", id_pa, "quitting...\n")
-      } else {
-        gedil2_f <- list.files(file.path(f.path,"WDPA_gedi_l2a+l2b_clean",iso3), full.names = TRUE)
-        registerDoParallel(cores=round(mproc*0.5))
-        iso_matched_gedi <- foreach(this_csv=gedil2_f, .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','raster')) %dopar% {
-          ##add the GEDI l4a model prediction for AGB here :
-          cat("Readng in no. ", match(this_csv, gedil2_f),"csv of ", length(gedil2_f),"csvs \n")
-          gedi_l2  <- read.csv(this_csv) %>%
-            dplyr::select(shot_number,lon_lowestmode, lat_lowestmode, starts_with("rh_"),cover, pai)%>%
-            SpatialPointsDataFrame(coords=.[,c("lon_lowestmode","lat_lowestmode")],
-                                   proj4string=CRS("+init=epsg:4326"), data=.) %>%spTransform(., CRS("+init=epsg:6933"))
-          
-          iso_matched_gedi_df <- data.frame()
-          matched_gedi <- raster::extract(mras,gedi_l2, df=TRUE)
-          matched_gedi_metrics <- cbind(matched_gedi,gedi_l2@data)
-          
-          matched_gedi_metrics_filtered <- matched_gedi_metrics %>% dplyr::filter(!is.na(status)) %>% 
-            convertFactor(matched0 = matched,exgedi = .) 
-          
-          matched_gedi_l4a <-matched_gedi_metrics_filtered %>% 
-            dplyr::mutate(
-              LAT=lat_lowestmode,
-              LON=lon_lowestmode,
-              REGION=region,
-              PFT=pft,
-              RH_10=rh_010+100,
-              RH_20=rh_020+100,
-              RH_30=rh_030+100,
-              RH_40=rh_040+100,
-              RH_50=rh_050+100,
-              RH_60=rh_060+100,
-              RH_70=rh_070+100,
-              RH_80=rh_080+100,
-              RH_90=rh_090+100,
-              RH_98=rh_098+100) %>% 
-            modelr::add_predictions(model2, "AGBD")
-          iso_matched_gedi_df <- rbind(matched_gedi_l4a,iso_matched_gedi_df)
-          return(iso_matched_gedi_df)
-        }
-        stopImplicitCluster()
-        cat("Done GEDI extraction for pa", id_pa,"in ",iso3,"\n")
+  matched_PAs <- list.files(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,sep=""), pattern=".RDS", full.names = FALSE)
+  
+} else if (dir.exists(paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,"/",sep=""))){
+  pattern1 = c(paste("wk",gediwk,sep=""),"RDS")
+  extracted_PAid <- list.files(paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,"/",sep=""), full.names = F, pattern=paste0(pattern1, collapse="|"))%>% 
+    readr::parse_number() %>% unique()
+  matched_PAs<- list.files(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk, sep=""), pattern=paste("wk",gediwk,sep=""), full.names=F) 
+  matched_PA_id <- matched_PAs %>% readr::parse_number()
+  runPA_id <- matched_PA_id[!(matched_PA_id %in% extracted_PAid)]
+  if (length(runPA_id)>0){
+    Pattern2 <-  paste(runPA_id, collapse="|")
+    runPA <-  matched_PAs[grepl(Pattern2,matched_PAs)]
+    matched_PAs <- runPA
+  } else {
+    matched_PAs <- NULL
+    cat("Step 5 already done for", iso3, "\n")
+  }
+}
+
+
+registerDoParallel(cores=round(mproc))
+getDoParWorkers()
+startTime <- Sys.time()
+foreach(this_rds=matched_PAs, .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','raster')) %dopar% {
+  cat("Extracting for no. ", match(this_rds,matched_PAs),"pa out of", length(matched_PAs),"\n")
+  id_pa <- this_rds %>% str_split("_") %>% unlist %>% .[3]
+  matched <- readRDS(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",iso3,"_pa_", id_pa,"_matching_results_wk",gediwk,".RDS", sep=""))
+  if (is.null(matched)==TRUE) {
+    cat("Matched result is null for PA", id_pa, "quitting...\n")
+  } else if (!is.null(matched)==TRUE){
+    mras  <- tryCatch(matched2ras(matched),
+                      error=function(cond){
+                        cat("Matched result is likely null for country", iso3,"pa", id_pa, "dimension of the match is", dim(matched),"\n")
+                        # writeLines("Matched results is likely null for country", paste(f.path,"WDPA_log/",iso3,"_log_matching.txt", sep=""))
+                        return(NULL)}) #convert the macthed df to a raster stack 
+    if(table(mras$status[])[2]==0 | table(mras$status[])[1]==0){
+      cat("Rasterized results unbalanced for PA", id_pa, "quitting...\n")
+    } else {
+      gedil2_f <- list.files(file.path(f.path,"WDPA_gedi_l2a+l2b_clean",iso3), full.names = TRUE)
+      registerDoParallel(cores=round(mproc*0.5))
+      iso_matched_gedi <- foreach(this_csv=gedil2_f, .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','raster')) %dopar% {
+        ##add the GEDI l4a model prediction for AGB here :
+        cat("Readng in no. ", match(this_csv, gedil2_f),"csv of ", length(gedil2_f),"csvs \n")
+        gedi_l2  <- read.csv(this_csv) %>%
+          dplyr::select(shot_number,lon_lowestmode, lat_lowestmode, starts_with("rh_"),cover, pai)%>%
+          SpatialPointsDataFrame(coords=.[,c("lon_lowestmode","lat_lowestmode")],
+                                 proj4string=CRS("+init=epsg:4326"), data=.) %>%spTransform(., CRS("+init=epsg:6933"))
         
-        iso_matched_gedi_sub <- iso_matched_gedi %>% 
-          dplyr::select("pa_id","shot_number","status","DESIG_ENG.x","wwfbiom","wwfecoreg","PADDD","pft","region","lon_lowestmode","lat_lowestmode",
-                        "rh_010","rh_020", "rh_030", "rh_040",  "rh_050",  "rh_060" , "rh_070","rh_075",  "rh_080",  "rh_090",  "rh_098", "AGBD","cover","pai","REGION","PFT")  #write to individual country folder
+        iso_matched_gedi_df <- data.frame()
+        matched_gedi <- raster::extract(mras,gedi_l2, df=TRUE)
+        matched_gedi_metrics <- cbind(matched_gedi,gedi_l2@data)
         
-        if (length(unique(iso_matched_gedi_sub$wwfbiom)) >1){
-          pabiome <- iso_matched_gedi_sub$wwfbiom %>% unique() %>% gsub('\\b(\\pL)\\pL{2,}|.','\\U\\1',.,perl = TRUE)%>% str_c( collapse = "+")
-        } else if (length(unique(iso_matched_gedi_sub$wwfbiom))==1){
-          pabiome <- iso_matched_gedi_sub$wwfbiom %>% unique() %>% gsub('\\b(\\pL)\\pL{2,}|.','\\U\\1',.,perl = TRUE)
-        } else {
-          pabiome <- iso_matched_gedi_sub$wwfbiom %>% unique()
-        }
-        papaddd <- unique(iso_matched_gedi_sub$PADDD)
-        continent <- unique(iso_matched_gedi_sub$REGION)
+        matched_gedi_metrics_filtered <- matched_gedi_metrics %>% dplyr::filter(!is.na(status)) %>% 
+          convertFactor(matched0 = matched,exgedi = .) 
         
-        dir.create(file.path(paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,"/",sep="")))
-        saveRDS(iso_matched_gedi_sub, file=paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,"/",iso3,"_pa_", id_pa,"_gedi_wk_",gediwk,"_conti_", continent,"_biome_",pabiome,"_paddd_",papaddd,".RDS", sep=""))
-        cat(id_pa,"results is written to dir\n")
-        # write.csv(iso_matched_gedi_sub, file=paste(f.path,"WDPA_GEDI_extract2/",iso3,"_wk",gediwk,"/",iso3,"_pa_", id_pa,"_iso_matched_gedi_sub_wk_",gediwk,".csv", sep=""))
+        matched_gedi_l4a <-matched_gedi_metrics_filtered %>% 
+          dplyr::mutate(
+            LAT=lat_lowestmode,
+            LON=lon_lowestmode,
+            REGION=region,
+            PFT=pft,
+            RH_10=rh_010+100,
+            RH_20=rh_020+100,
+            RH_30=rh_030+100,
+            RH_40=rh_040+100,
+            RH_50=rh_050+100,
+            RH_60=rh_060+100,
+            RH_70=rh_070+100,
+            RH_80=rh_080+100,
+            RH_90=rh_090+100,
+            RH_98=rh_098+100) %>% 
+          modelr::add_predictions(model2, "AGBD")
+        iso_matched_gedi_df <- rbind(matched_gedi_l4a,iso_matched_gedi_df)
+        return(iso_matched_gedi_df)
       }
+      stopImplicitCluster()
+      cat("Done GEDI extraction for pa", id_pa,"in ",iso3,"\n")
+      
+      iso_matched_gedi_sub <- iso_matched_gedi %>% 
+        dplyr::select("pa_id","shot_number","status","DESIG_ENG.x","wwfbiom","wwfecoreg","PADDD","pft","region","lon_lowestmode","lat_lowestmode",
+                      "rh_010","rh_020", "rh_030", "rh_040",  "rh_050",  "rh_060" , "rh_070","rh_075",  "rh_080",  "rh_090",  "rh_098", "AGBD","cover","pai","REGION","PFT")  #write to individual country folder
+      
+      if (length(unique(iso_matched_gedi_sub$wwfbiom)) >1){
+        pabiome <- iso_matched_gedi_sub$wwfbiom %>% unique() %>% gsub('\\b(\\pL)\\pL{2,}|.','\\U\\1',.,perl = TRUE)%>% str_c( collapse = "+")
+      } else if (length(unique(iso_matched_gedi_sub$wwfbiom))==1){
+        pabiome <- iso_matched_gedi_sub$wwfbiom %>% unique() %>% gsub('\\b(\\pL)\\pL{2,}|.','\\U\\1',.,perl = TRUE)
+      } else {
+        pabiome <- iso_matched_gedi_sub$wwfbiom %>% unique()
+      }
+      papaddd <- unique(iso_matched_gedi_sub$PADDD) %>% getmode()
+      continent <- unique(iso_matched_gedi_sub$REGION) %>% getmode()
+      
+      dir.create(file.path(paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,"/",sep="")))
+      saveRDS(iso_matched_gedi_sub, file=paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,"/",iso3,"_pa_", id_pa,"_gedi_wk_",gediwk,"_conti_", continent,"_biome_",pabiome,"_paddd_",papaddd,".RDS", sep=""))
+      cat(id_pa,"results is written to dir\n")
+      # write.csv(iso_matched_gedi_sub, file=paste(f.path,"WDPA_GEDI_extract2/",iso3,"_wk",gediwk,"/",iso3,"_pa_", id_pa,"_iso_matched_gedi_sub_wk_",gediwk,".csv", sep=""))
     }
   }
-  stopImplicitCluster()
-  tElapsed <- Sys.time()-startTime
-  cat(tElapsed, "for extracting all PAs in", iso3,"\n")
-  cat("Done GEDI extraction for pa in ",iso3,"\n")    
-  
-} else {
-  cat("Step 5 already done for", iso3, "\n")
+  return(NULL)
 }
+stopImplicitCluster()
+tElapsed <- Sys.time()-startTime
+cat(tElapsed, "for extracting all PAs in", iso3,"\n")
+cat("Done GEDI extraction for pa in ",iso3,"\n")    
 
 #---------------STEP6: [FIGURE 4B] Calculating per pa summary stats, 1 pa per row, contain shot#/PA---------------------------- 
 gedi_paf <-list.files(paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,sep=""), pattern=".RDS", full.names = TRUE)
@@ -211,7 +228,7 @@ g1km <- cbind(g1km_sp@coords, g1km_sp@data, country=iso3)
 # dir.create(paste(f.path,"WDPA_GEDI_extract3/cell_stats/",sep=""))
 write.csv(g1km, file=paste(f.path,"WDPA_GEDI_extract3/cell_stats/",iso3,"_cell_shots_wk",gediwk,".csv", sep=""))
 cat(iso3,"1km pixel level shot count df is exported to /cell_stats/ \n")
-
+rm(ras, gstack)
 
 #---------------STEP8: Calculating per country summary stats, 1 country per row, summarize key stats for the country ---------------------    
 cat("Step 8: Calculating country level summary stats for ", iso3,"\n ")
@@ -226,7 +243,7 @@ iso_sum <- fullds %>%
                    meanagbd=mean(AGBD, na.rm=TRUE), sdagbd=sd(AGBD, na.rm=TRUE), medagbd=median(AGBD, na.rm=TRUE))%>% 
   tidyr::pivot_wider(names_from=status, values_from= setdiff(names(.),c("pa_id", "status"))) #writeLine to a large txt file where world pas stats are
 iso_sum$iso3 <- iso3
-continent <- fullds$region %>% unique()
+continent <- fullds$region %>% unique() %>% getmode()
 iso_sum$continent <- continent
 
 write.csv(iso_sum, file=paste(f.path,"WDPA_GEDI_extract3/iso_stats/",iso3,"_country_stats_summary_wk",gediwk,".csv", sep=""), row.names = F)
