@@ -5,6 +5,44 @@ output: html_notebook
 
 This notebook produces the figures for the Paper 'Global protected areas are effective for preserving forest structure and carbon'.
 
+Set up environment
+```{r}
+#load any packages necessary
+library(dplyr)
+library(ggplot2)
+local_fig_path <- '/Users/lduncans/Documents/NSF_bio/GEDI_PA_paper/figs/'
+
+#function for plotting up multiple plots with a single legend
+grid_arrange_shared_legend <- function(..., ncol = length(list(...)), nrow = 1, position = c("bottom", "right")) {
+
+  plots <- list(...)
+  position <- match.arg(position)
+  g <- ggplotGrob(plots[[1]] + theme(legend.position = position))$grobs
+  legend <- g[[which(sapply(g, function(x) x$name) == "guide-box")]]
+  lheight <- sum(legend$height)
+  lwidth <- sum(legend$width)
+  gl <- lapply(plots, function(x) x + theme(legend.position="none"))
+  gl <- c(gl, ncol = ncol, nrow = nrow)
+
+  combined <- switch(position,
+                     "bottom" = arrangeGrob(do.call(arrangeGrob, gl),
+                                            legend,
+                                            ncol = 1,
+                                            heights = unit.c(unit(1, "npc") - lheight, lheight)),
+                     "right" = arrangeGrob(do.call(arrangeGrob, gl),
+                                           legend,
+                                           ncol = 2,
+                                           widths = unit.c(unit(1, "npc") - lwidth, lwidth)))
+
+  grid.newpage()
+  grid.draw(combined)
+
+  # return gtable invisibly
+  invisible(combined)
+
+}
+```
+
 Fig 1: Methods flowchart
 ```{r}
 #Created Externally by V Leitold
@@ -12,6 +50,11 @@ Fig 1: Methods flowchart
 
 Fig 2: Global GEDI height, RH50, cover & biomass
 ```{r}
+## this cell doesn't run on its own. Needs updating. 
+#library(RgoogleMaps)
+library(ggmap)
+f.path <- '/Volumes/gsdata1/duncansongp/GEDI_global_PA/'
+
 #Placeholder exists, but we will create our own version with the final data used 
 gfs=list.files(paste(f.path,"/WDPA_gedi_l2a+l2b_clean/", iso3, sep=""), full.names = TRUE)  #grab all files from l2ab clean for gfs to run globally 
 bbox=matrix(c(-179.9,-52,179.9,83), nrow = 2, dimnames = list(c("x","y"), c("min", "max")))  #get a worldwide bbox to run globally 
@@ -36,7 +79,7 @@ for (f in gfs){
   
 }
 
-mall=mbase+geom_polygon(data =adm,size=0.5,
+mall=mbase+geom_polygon(data =asm,size=0.5,
                    aes(long, lat, group = group),
                    colour = "black", alpha = 0)+
   geom_polygon(data =allPAs,size=0.15,
@@ -48,6 +91,11 @@ mall=mbase+geom_polygon(data =adm,size=0.5,
 ggplot2::ggsave(filename="/gpfs/data1/duncansongp/amberliang/trends.Earth/TZA_result/rhmap.png", plot=mapall, width=8, height=6,
                 units = "in", bg = "transparent")
 
+#make plot locally as an option as well
+fig_filename <- paste(local_fig_path, 'Fig2.png', sep='')
+ggplot2::ggsave(filename=fig_filename, plot=mapall, width=8, height=6,
+                units = "in", bg = "transparent")
+
 ```
 
 Fig 3: Global PAs for paper
@@ -57,6 +105,8 @@ Fig 3: Global PAs for paper
 
 Fig 4: Number of GEDI shots per 1 km pixel
 ```{r}
+library(ggplot2)
+library(dplyr)
 #Coded  by M Liang
 #GEDI shots distribution per 1km cell  Figure 4a
 fpath <- "/gpfs/data1/duncansongp/GEDI_global_PA/WDPA_GEDI_extract3/cell_stats"
@@ -78,21 +128,18 @@ for (d in shotf){
 
 print(dim(shotInCell))
 
+
 # plot
 p <- shotInCell %>%
   ggplot( aes(x=gshot)) +
   geom_histogram( binwidth=1, fill="#69b3a2", color="#e9ecef", alpha=0.9) +
   labs(title = "GEDI shots in each matched 1km cell",subtitle = paste("Binwidth = 1; n =", format(nrow(shotInCell), big.mark=","), "iso3 =", length(unique(shotInCell$iso3)), sep=" ")) +
-  theme_ipsum() +
-  theme(
-    plot.title = element_text(size=15)
-  )+
   labs(x = "Number of GEDI shots in 1km Pixel")
 p
 
 #GEDI shots distribution per pa  Figure 4b
 
-fpath <- "/gpfs/data1/duncansongp/GEDI_global_PA/WDPA_GEDI_extract3/pa_stats"
+fpath <- "/Volumes/gsdata1/duncansongp/GEDI_global_PA/WDPA_GEDI_extract3/pa_stats"
 dir(fpath)
 
 shotInPA <- data.frame()
@@ -119,14 +166,23 @@ p2 <- shotInPA %>%
     plot.title = element_text(size=15)
   )+
   labs(x = "Number of GEDI shots in each PA")
+
+png_file<-paste(local_fig_path, 'Fig4.png', sep='')
+png(width=2000,height=1000,file=png_file)
 p2
+dev.off()
 ```
 
 Fig 5: Comparison of four metrics for globe
 ```{r}
 
-fpath <- "/gpfs/data1/duncansongp/GEDI_global_PA/WDPA_GEDI_extract3/iso_full_nodup"
+fpath <- "/Volumes/gsdata1/duncansongp/GEDI_global_PA/WDPA_GEDI_extract3/iso_full_nodup"
 dir(fpath)
+
+library(dplyr)
+library(tidyr)
+library(gridExtra)
+library(cowplot)
 
 #check biomass distribution
 sub <- data.frame()
@@ -139,7 +195,7 @@ for (d in dd){
     
     tmp <- read.csv(d) %>% 
       dplyr::filter(!is.na(pa_id)) %>% 
-      dplyr::select(status, rh_098, AGBD, cover, pai)
+      dplyr::select(status, rh_098, AGBD, cover, pai, wwfbiom, pft, region)
     sub <- sub %>% rbind(tmp, stringsAsFactors=FALSE)
     print(dim(sub))
   
@@ -147,7 +203,10 @@ for (d in dd){
 sub%>%
   filter(!is.na(status)) %>% 
   mutate(pa_stat=factor(status)) %>% 
-  dplyr::select(pa_stat, rh_098,cover,pai, AGBD)%>%
+  mutate(biome=factor(wwfbiom)) %>%
+  mutate(pft=factor(pft)) %>%
+  mutate(continent=factor(region)) %>%
+  dplyr::select(pa_stat, biome, pft, continent, rh_098,cover,pai, AGBD)%>%
   gather(GEDI_metrics, values, rh_098,cover,pai, AGBD)%>%
   mutate(values=round(values,2))->metric_sub
 dim(metric_sub)
@@ -164,48 +223,180 @@ t=t[t!=0]
 names(t)=c("control","Protected/treated")
 metric_sub$GEDI_metrics%>%unique()%>%length()->n  #how many metrics used
 #source in the custome panel plot scaling script
-source("/gpfs/data1/duncansongp/amberliang/scripts/individule_facet_scale.R")
+source("/Volumes/gsdata1/duncansongp/amberliang/scripts/individule_facet_scale.R")
+
+stat_summary1 <- stat_summary(
+    fun.ymin = function(z) { quantile(z,0.25) },
+    fun.ymax = function(z) { quantile(z,0.75) },
+    fun.y = median,
+    size=0.3, width=0.3,
+    geom = "pointrange", color="#e41a1c",position = position_dodge(1))
+
+stat_summary2 <- stat_summary(
+    fun.y =  function(z) {mean(z, na.rm=T)},
+    size=1.5, 
+    geom="point", color="#377eb8",shape=17,position = position_dodge(1))
+
+stat_summary3 <- stat_summary(
+    fun.y =  function(z) {getmode(z)},
+    size=1.5,
+    geom="point", color="#4daf4a",shape=15, position = position_dodge(1))
+
 p2=p + geom_violin(position = position_dodge(1),width=0.8, trim=T,na.rm=F) + 
   facet_wrap(~GEDI_metrics, scale="free",ncol=2)+
   scale_fill_manual(name = "Protected vs. Controls", 
                     labels = c(paste(names(t), "n=", format(t/n, big.mark=","),sep=" ")),
                     values =c("#ebac3f","#f7e874"))+
-  labs(title = "GEDI metrics and AGBD for Moyowosi Game Reserve vs. controls",subtitle = "Stats overlay: median and IQR (red), mean (blue), mode (green)")+
-  stat_summary(
-    fun.ymin = function(z) { quantile(z,0.25) },
-    fun.ymax = function(z) { quantile(z,0.75) },
-    fun.y = median,
-    size=0.3, width=0.3,
-    geom = "pointrange", color="#e41a1c",position = position_dodge(1))+
-  stat_summary(
-    fun.y =  function(z) {mean(z, na.rm=T)},
-    size=1.5, 
-    geom="point", color="#377eb8",shape=17,position = position_dodge(1))+
-  stat_summary(
-    fun.y =  function(z) {getmode(z)},
-    size=1.5,
-    geom="point", color="#4daf4a",shape=15, position = position_dodge(1))+
+  labs(title = "Global GEDI metrics and AGBD",subtitle = "Stats overlay: median and IQR (red), mean (blue), mode (green)")+
+  stat_summary1 +
+  stat_summary2 +
+  stat_summary3 +
   facet_wrap_custom(~GEDI_metrics, scales = "free", ncol = 2, scale_overrides = list(
     scale_override(1, scale_y_continuous(limits = c(0,45))),
     scale_override(2, scale_y_continuous(limits = c(0,1))),
     scale_override(3, scale_y_continuous(limits = c(0,3))),
     scale_override(4, scale_y_continuous(limits = c(0,200)))))
 
-ggplot2::ggsave(filename="/gpfs/data1/duncansongp/GEDI_global_PA/fig5.png", plot=p2, width=10, height=12,
-                units = "in", bg = "transparent")
+ggplot2::ggsave(filename="/gpfs/data1/duncansongp/GEDI_global_PA/paper_figs/fig5.png", plot=p2, width=15, height=12, units = "in", bg = "transparent")
 
 ps=sub %>% dplyr::select(status, AGBD) %>% mutate(status=as.factor(status))
 psp=ggplot(data=ps, aes(x=AGBD, group=status, fill=status)) +
   geom_density(adjust=1.5,  alpha=.4) +
   theme_ipsum() 
-ggplot2::ggsave(filename="/gpfs/data1/duncansongp/GEDI_global_PA/fig5b.png", plot=p2, width=10, height=12,
-                units = "in", bg = "transparent")
+
+ggplot2::ggsave(filename="/gpfs/data1/duncansongp/GEDI_global_PA/fig5b.png", plot=p, width=10, height=12, units = "in", bg = "transparent")
+
+#local files
+ggplot2::ggsave(filename=paste(local_fig_path, 'fig5.png', sep=''), plot=p2, width=10, height=12, units = "in", bg = "transparent")
+
+ps=sub %>% dplyr::select(status, AGBD, region) %>% mutate(status=as.factor(status))
+psp=ggplot(data=ps, aes(x=AGBD, group=status, fill=status)) +
+  geom_density(adjust=1.5,  alpha=.4) +
+  coord_cartesian(xlim=c(0, 500), ylim=c(0, 0.01))
+
+ggplot2::ggsave(filename=paste(local_fig_path, 'fig5b.png', sep=''), plot=psp, width=10, height=12, units = "in", bg = "transparent")
 
 ```
 
 Fig 6: Comparison of four metrics for globe, divided by continent
 ```{r}
+fpath <- "/Volumes/gsdata1/duncansongp/GEDI_global_PA/WDPA_GEDI_extract3/iso_full_nodup"
+dir(fpath)
 
+library(dplyr)
+library(tidyr)
+library(gridExtra)
+library(cowplot)
+
+#check biomass distribution
+sub <- data.frame()
+dd <- list.files(path = fpath, full.names = TRUE, recursive=FALSE)
+
+for (d in dd){
+    tmp <- read.csv(d) %>% 
+      dplyr::filter(!is.na(pa_id)) %>% 
+      dplyr::select(status, rh_098, AGBD, cover, pai, wwfbiom, pft, region)
+    sub <- sub %>% rbind(tmp, stringsAsFactors=FALSE)
+    print(dim(sub))
+  
+}
+
+#change pa_status to text
+status_factor <- rep('temp', nrow(metric_sub))
+status_factor[which(metric_sub$pa_stat==0)] <- 'Control'
+status_factor[which(metric_sub$pa_stat==1)] <- 'Protected Area'
+status_factor <- as.factor(status_factor)
+metric_sub <- cbind(metric_sub, status_factor)
+
+#get the mean difference in the status groups by region.
+#AGBD by Continent
+sub$region <- fct_explicit_na(sub$region)
+sub %>%
+  group_by(status, region) %>%
+  summarize(mean = mean(AGBD, na.rm=TRUE)) -> regional_means_AGBD
+
+mean_control <- regional_means_AGBD[which(regional_means_AGBD$status==0),]
+mean_treatment <- regional_means_AGBD[which(regional_means_AGBD$status==1),]
+mean_diffs <- 100*((mean_treatment$mean - mean_control$mean) / mean_treatment$mean)
+
+mp <- data.frame(mean_diffs=mean_diffs[-length(mean_diffs)], continent=mean_control$region[-length(mean_diffs)])
+
+mp$colour <- ifelse(mp$mean_diffs < 0, "firebrick1","steelblue")
+mp$hjust <- ifelse(mp$mean_diffs > 0, 1.3, -0.3)
+
+agbd_continent <- ggplot(mp, aes(y=mean_diffs, x=continent, hjust = hjust)) + 
+  geom_bar(stat = "identity", aes(fill = colour)) +
+  labs(y = 'Mean AGBD Difference (% Mg/ha)') +
+  labs(x = 'Continent') +
+  theme(legend.position = 'none', text = element_text(size=40))
+
+#Height by Continent
+sub$region <- fct_explicit_na(sub$region)
+sub %>%
+  group_by(status, region) %>%
+  summarize(mean = mean(rh_098, na.rm=TRUE)) -> regional_means_ht
+
+mean_control <- regional_means_ht[which(regional_means_ht$status==0),]
+mean_treatment <- regional_means_ht[which(regional_means_ht$status==1),]
+mean_diffs <- mean_treatment$mean - mean_control$mean
+
+mp <- data.frame(mean_diffs=mean_diffs[-length(mean_diffs)], continent=mean_control$region[-length(mean_diffs)])
+
+mp$colour <- ifelse(mp$mean_diffs < 0, "firebrick1","steelblue")
+mp$hjust <- ifelse(mp$mean_diffs > 0, 1.3, -0.3)
+
+ht_continent <- ggplot(mp, aes(y=mean_diffs, x=continent, hjust = hjust)) + 
+  geom_bar(stat = "identity") +
+  labs(y = 'Mean Height Difference (m)') +
+  labs(x = 'Continent') +
+  theme(legend.position = 'none', text = element_text(size=40))
+
+#PAI by Continent
+sub$region <- fct_explicit_na(sub$region)
+sub %>%
+  group_by(status, region) %>%
+  summarize(mean = mean(pai, na.rm=TRUE)) -> regional_means_ht
+
+mean_control <- regional_means_pai[which(regional_means_ht$status==0),]
+mean_treatment <- regional_means_pai[which(regional_means_ht$status==1),]
+mean_diffs <- 100*(mean_treatment$mean - mean_control$mean) / mean_treatment$mean
+
+mp <- data.frame(mean_diffs=mean_diffs[-length(mean_diffs)], continent=mean_control$region[-length(mean_diffs)])
+
+mp$colour <- ifelse(mp$mean_diffs < 0, "steelblue","firebrickred1")
+mp$hjust <- ifelse(mp$mean_diffs > 0, 1.3, -0.3)
+
+pai_continent <- ggplot(mp, aes(y=mean_diffs, x=continent, hjust = hjust)) + 
+  geom_bar(stat = "identity") +
+  labs(y = 'Mean PAI Difference (%)') +
+  labs(x = 'Continent') +
+  theme(legend.position = 'none', text = element_text(size=40))
+
+#Cover by Continent
+sub$region <- fct_explicit_na(sub$region)
+sub %>%
+  group_by(status, region) %>%
+  summarize(mean = mean(cover, na.rm=TRUE)) -> regional_means_ht
+
+mean_control <- regional_means_pai[which(regional_means_ht$status==0),]
+mean_treatment <- regional_means_pai[which(regional_means_ht$status==1),]
+mean_diffs <- 100*(mean_treatment$mean - mean_control$mean) / mean_treatment$mean
+
+mp <- data.frame(mean_diffs=mean_diffs[-length(mean_diffs)], continent=mean_control$region[-length(mean_diffs)])
+
+mp$colour <- ifelse(mp$mean_diffs < 0, "firebrickred1","steelblue")
+mp$hjust <- ifelse(mp$mean_diffs > 0, 1.3, -0.3)
+
+cover_continent <- ggplot(mp, aes(y=mean_diffs, x=continent, hjust = hjust)) + 
+  geom_bar(stat = "identity") +
+  labs(y = 'Mean Cover Difference (%)') +
+  labs(x = 'Continent') +
+  theme(legend.position = 'none', text = element_text(size=40))
+
+png_file<-paste(filename=paste(local_fig_path, 'fig6_continent.png', sep=''))
+png(width=1800,height=2000,file=png_file)
+grid.arrange(ht_continent, cover_continent, pai_continent, agbd_continent, ncol=2)
+dev.off()
 ```
 
 Fig 7: Comparison of four metrics for the top 10 countries with most PAs (or similar)
