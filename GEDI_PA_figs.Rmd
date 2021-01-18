@@ -49,6 +49,7 @@ Fig 1: Methods flowchart
 ```
 
 Fig 2: Global GEDI height, RH50, cover & biomass
+Amber to code - doesn't work directly at this point. 
 ```{r}
 ## this cell doesn't run on its own. Needs updating. 
 #library(RgoogleMaps)
@@ -104,6 +105,7 @@ Fig 3: Global PAs for paper
 ```
 
 Fig 4: Number of GEDI shots per 1 km pixel
+Amber to code so that this generates a figure directly from running notebook cell.
 ```{r}
 library(ggplot2)
 library(dplyr)
@@ -174,6 +176,8 @@ dev.off()
 ```
 
 Fig 5: Comparison of four metrics for globe
+This should be overlapping histograms of each metric, potentially with breakdown by continent, PFT or biome in the topright of each figure to use up the space. 
+Amber to code (fixing mess Laura made...)
 ```{r}
 
 fpath <- "/Volumes/gsdata1/duncansongp/GEDI_global_PA/WDPA_GEDI_extract3/iso_full_nodup"
@@ -279,6 +283,7 @@ ggplot2::ggsave(filename=paste(local_fig_path, 'fig5b.png', sep=''), plot=psp, w
 ```
 
 Fig 6: Comparison of four metrics for globe, divided by continent
+Note: need to add whiskers for the SD 
 ```{r}
 fpath <- "/Volumes/gsdata1/duncansongp/GEDI_global_PA/WDPA_GEDI_extract3/iso_full_nodup"
 dir(fpath)
@@ -399,22 +404,34 @@ grid.arrange(ht_continent, cover_continent, pai_continent, agbd_continent, ncol=
 dev.off()
 ```
 
-Fig 7: Comparison of four metrics for the top 10 countries with most PAs (or similar)
+Fig 7: Map of globe with barchart of mean difference (m for height, %diff for PAI, Cover, AGBD) placed in each corresponding continent. Vero to take first crack. Code for Fig 6 can be modified to make this. 
+SD plotted as whiskers for each bar. 
 ```{r}
 
 ```
 
-Fig 8: Comparison of four metrics for different biome classes
+Fig 8: Comparison of four metrics for different biome classes (same as Fig 6 but for biome)
 ```{r}
 
 ```
 
-Fig 9: Country-level PA distribution figure (e.g. Brazil)
+
+Fig 9: Comparison of four metrics for the top 10 countries with most PAs (or similar)
+```{r}
+
+```
+
+Fig 10: Distributions of biomass within protected areas vs. outside of protected areas by biome, urban mask applied
+```{r}
+
+```
+
+Fig 11: Country-level PA distribution figure (e.g. Brazil)
 ```{r}
 #Created externally by V Leitold
 ```
 
-Fig 10: Relative importance of variables to determine biomass preservation efficacy 
+Fig 12: Relative importance of variables to determine biomass preservation efficacy 
 ```{r}
 
 ```
