@@ -45,7 +45,6 @@ source("/gpfs/data1/duncansongp/amberliang/trends.Earth/git/GEDI_PA/matching_fun
 cat(paste("Step 5: Performing WK ",gediwk,"GEDI extraction for", iso3,"\n"))
 
 
-
 if(!dir.exists(paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,"/",sep=""))){
   matched_PAs <- list.files(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,sep=""), pattern=".RDS", full.names = FALSE)
   
@@ -59,7 +58,8 @@ if(!dir.exists(paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,"/",sep=""))
   if (length(runPA_id)>0){
     Pattern2 <-  paste(runPA_id, collapse="|")
     runPA <-  matched_PAs[grepl(Pattern2,matched_PAs)]
-    matched_PAs <- runPA
+    # runPA_ind <- str_detect(matched_PAs, paste(runPA_id, collapse = "|"))
+    matched_PAs <-runPA
   } else {
     matched_PAs <- NULL
     cat("Step 5 already done for", iso3, "\n")
@@ -213,9 +213,10 @@ cat(iso3,"Dup removed df is exported to /iso_full_nodup/ \n")
 
 #rasterize the non-dup GEDI results to output the shots_per_1km results
 cat("Step 7b: Summarizing #of GEDI shots per 1km pixel\n ")
+# fullds <- read.csv(paste(f.path,"WDPA_GEDI_extract3/iso_full_nodup/",iso3,"_country_full_nodup_wk",gediwk,".csv", sep=""))
 iso_gedi_spdf <- SpatialPointsDataFrame(coords=fullds[,c("lon_lowestmode","lat_lowestmode")],
                                                 proj4string=CRS("+init=epsg:4326"), data=fullds) %>%spTransform(., CRS("+init=epsg:6933"))
-ras <- crop(MCD12Q1, extent(buffer(iso_gedi_spdf,10000))) #a little slow 
+ras <- crop(MCD12Q1, extent(iso_gedi_spdf)) #a little slow with buffer 
 gcount_ras <- rasterize(coordinates(iso_gedi_spdf),ras, fun="count",background=NA)
 names(gcount_ras) <- "gshot_counts"
 gpid_ras <- rasterize(coordinates(iso_gedi_spdf),ras, fun=getmode,field=iso_gedi_spdf$pa_id,background=NA)
@@ -232,6 +233,7 @@ rm(ras, gstack)
 
 #---------------STEP8: Calculating per country summary stats, 1 country per row, summarize key stats for the country ---------------------    
 cat("Step 8: Calculating country level summary stats for ", iso3,"\n ")
+# fullds <- read.csv(paste(f.path,"WDPA_GEDI_extract3/iso_full_nodup/",iso3,"_country_full_nodup_wk",gediwk,".csv", sep=""))
 iso_sum <- fullds %>%
   group_by(status) %>%  
   dplyr::summarise(count=length(rh_098),meanrh98=mean(rh_098, na.rm=TRUE), sdrh98=sd(rh_098, na.rm = TRUE), medrh98=median(rh_098, na.rm = TRUE),
