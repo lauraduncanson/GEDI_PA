@@ -198,7 +198,7 @@ matched2ras <- function(matched_df){
   # matched_pts$REP_AREA <- matched_pts$REP_AREA%>% as.numeric()
   # matched_pts$PA_STATUSYR <- matched_pts$PA_STATUSYR%>% as.integer()
   # 
-  cols <- c("REP_AREA","PA_STATUSYR","DESIG_ENG.x","GOV_TYPE","OWN_TYPE","wwfbiom","wwfecoreg")
+  cols <- c("DESIG_ENG.x","wwfbiom","wwfecoreg")
   matched_pts@data[,cols] %<>% lapply(function(x) as.numeric(x))
   matched_pts@data[,cols][is.na(matched_pts@data[,cols])]<- 0
   
@@ -211,12 +211,12 @@ matched2ras <- function(matched_df){
   padddr <- isoPadddRas(poly=poly,pts=pts, rtemplate = r)
   
   matched_ras <- rasterize(matched_pts@coords, r,
-                           field=matched_pts@data[,c("status","pa_id","REP_AREA","PA_STATUSYR","DESIG_ENG.x","GOV_TYPE",
-                                                     "OWN_TYPE","wwfbiom","wwfecoreg")],background=NA)%>% 
+                           field=matched_pts@data[,c("status","pa_id","DESIG_ENG.x","wwfbiom","wwfecoreg")],background=NA)%>% 
     stack(r) %>% stack(continent) %>% stack(padddr)
   
   return(matched_ras)
 }
+
 
 convertFactor <- function(matched0, exgedi){
   exgedi$pft <- as.character(exgedi$pft)
@@ -229,23 +229,24 @@ convertFactor <- function(matched0, exgedi){
                                             "GS",
                                             "GS"))
   exgedi$region <- as.character(exgedi$region)
-  exgedi$region <- factor(exgedi$region, levels=c(1:4,6,7),
+  exgedi$region <- factor(exgedi$region, levels=c(1:7),
                        labels = c("Eu",
                                   "As",
                                   "Au",
                                   "Af",
+                                  "As",
                                   "SA",
                                   "US"))
   
   exgedi$stratum <- paste(exgedi$pft, exgedi$region,sep="_")
   
-  exgedi$GOV_TYPE <- exgedi$GOV_TYPE %>% 
-    factor(levels=seq(length(levels(matched0$GOV_TYPE))),
-           labels=levels(matched0$GOV_TYPE))
-  
-  exgedi$OWN_TYPE <- exgedi$OWN_TYPE %>% 
-    factor(levels=seq(length(levels(matched0$OWN_TYPE))),
-           labels=levels(matched0$OWN_TYPE))  
+  # exgedi$GOV_TYPE <- exgedi$GOV_TYPE %>% 
+  #   factor(levels=seq(length(levels(matched0$GOV_TYPE))),
+  #          labels=levels(matched0$GOV_TYPE))
+  # 
+  # exgedi$OWN_TYPE <- exgedi$OWN_TYPE %>% 
+  #   factor(levels=seq(length(levels(matched0$OWN_TYPE))),
+  #          labels=levels(matched0$OWN_TYPE))  
   
   exgedi$DESIG_ENG.x <- exgedi$DESIG_ENG.x %>% 
     factor(levels=seq(length(levels(matched0$DESIG_ENG.x))),
@@ -307,6 +308,7 @@ subdfExport <- function(filtered_df){
   
   return(total_df)
 }
+
 
 getmode <- function(v,na.rm) {
   uniqv <- unique(v)
