@@ -317,7 +317,7 @@ foreach(this_pa=d_PAs,.combine = foreach_rbind, .packages=c('sp','magrittr', 'dp
             #do a glm here to throw out definitely not control data based on low propensity score (they weren't going to be matching anyways)
             
             #create a smaller distance matrix
-            m_all <- tryCatch(match_wocat(new_d),error=function(e) return(NULL))
+            m_all <- tryCatch(match_wocat(new_d, pid=id_pa),error=function(e) return(NULL))
             # m_all <- match_wocat(new_d)
             m_all2 <- tryCatch(m_all[1,],error=function(e) return(NULL))
             # m_all2 <- m_all[1,]
@@ -352,7 +352,7 @@ foreach(this_pa=d_PAs,.combine = foreach_rbind, .packages=c('sp','magrittr', 'dp
                                 dplyr::rename(postmatch_chisquare=m_all2.match_obj_chisquare,postmatch_df=m_all2.match_obj_df,postmatch_pvalue=m_all2.match_obj_p.value,
                                               prematch_chisquare= Unadj_chisquare, prematch_df= Unadj_df, prematch_pvalue=Unadj_p.value),
                               error=function(e) return(NULL))
-      cat(paste("Dimension of matched: ", dim(m_all2_out),"for PA",id_pa,"\n"))
+      cat(paste("Dimension of matched: ", nrow(m_all2_out),"for PA",id_pa,"\n"))
       return(match_score)
     }
     stopImplicitCluster()
