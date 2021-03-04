@@ -29,7 +29,7 @@ foreach_rbind <- function(d1, d2) {
   }
 }
 
-match_wocat <- function(df) {
+match_wocat <- function(df, pid) {
   
   registerDoParallel(4)
   
@@ -63,7 +63,7 @@ match_wocat <- function(df) {
                     this_d$land_cover <- droplevels(this_d$land_cover)
                     this_d$wwfbiom <- droplevels(this_d$wwfbiom)
                     this_d$wwfecoreg <- droplevels(this_d$wwfecoreg)
-                    table(this_d$status)
+                    # table(this_d$status)
                     f <- status ~ mean_temp + prec + elevation + slope+ d2road + d2city + popden + tt2city
                     # Can't stratify by land cover or climate if they only have one level
                     if (nlevels(this_d$land_cover) >= 2) {
@@ -81,39 +81,83 @@ match_wocat <- function(df) {
                     } else {
                       f <- update(f, ~ . - wwfecoreg)
                     }
-                    
                     if (nrow(d_wocat) > 2) {
                       model <- glm(f, data=this_d)
                       dists <- match_on(model, data=this_d)
                     } else {
-                      # Use Mahalanobis distance if there aren't enough points to run a
-                      # glm
+                      # Use Mahalanobis distance if there aren't enough points to run a glm
                       dists <- match_on(f, data=this_d)
                     }
                     #potentially drop caliper line; will cut down dists matrix but not the speed issue
                     # dists <- caliper(dists, 2)
-                    
                     # If the controls are too far from the treatments (due to the caliper) 
                     # then the matching may fail. Can test for this by seeing if subdim 
                     # runs successfully
                     subdim_works <- tryCatch(is.data.frame(subdim(dists)),
-                                             error=function(e) return(FALSE))
+                                             error=function(e)return(FALSE))
                     if (subdim_works) {
                       m <- fullmatch(dists, min.controls=1, max.controls=1, data=this_d)
                       prematch_d <- this_d
                       this_d$matched <- m
                       this_d <- this_d[matched(m), ]
-                      
-                      
                     } else {
                       this_d <- data.frame()
                     }
                     # Need to handle the possibility that there were no matches for this 
                     # treatment, meaning this_d will be an empty data.frame
-                    if (nrow(this_d) == 0) {
-                      return(NULL)
+                    if (nrow(this_d) == 0) {   #if matching w/ ecoreg return no results, match again w/o ecoreg and check matching results
+                      this_d<-df
+                      d_wocat <- filter(this_d, status)
+                      this_d <- filter(this_d,
+                                       land_cover %in% unique(d_wocat$land_cover),
+                                       wwfbiom %in% unique(d_wocat$wwfbiom))
+                      
+                      this_d$land_cover <- droplevels(this_d$land_cover)
+                      this_d$wwfbiom <- droplevels(this_d$wwfbiom)
+                      f <- status ~ mean_temp + prec + elevation + slope+ d2road + d2city + popden + tt2city
+                      if (nlevels(this_d$land_cover) >= 2) {
+                        f <- update(f, ~ . + strata(land_cover))
+                      } else {
+                        f <- update(f, ~ . - land_cover)
+                      }
+                      if (nlevels(this_d$wwfbiom) >= 2) {
+                        f <- update(f, ~ . + strata(wwfbiom))
+                      } else {
+                        f <- update(f, ~ . - wwfbiom)
+                      }
+                      if (nrow(d_wocat) > 2) {
+                        model <- glm(f, data=this_d)
+                        dists <- match_on(model, data=this_d)
+                      } else {
+                        dists <- match_on(f, data=this_d)
+                      }
+                      subdim_works <- tryCatch(is.data.frame(subdim(dists)),
+                                               error=function(e)return(FALSE))
+                      if (subdim_works) {
+                        m <- fullmatch(dists, min.controls=1, max.controls=1, data=this_d)
+                        prematch_d <- this_d
+                        this_d$matched <- m
+                        this_d <- this_d[matched(m), ]
+                      } else {
+                        this_d <- data.frame()
+                      }
+                      if(nrow(this_d)==0){
+                        log_mes <- paste(pid,"-Matching without wwfecoreg:Failed\n",sep="")
+                        dir.create(paste(paste(f.path,"WDPA_matching_log/",iso3,sep="")))
+                        cat(log_mes,file=paste(f.path,"WDPA_matching_log/",iso3,"/",iso3,"_pa_",pid,"_matching_used_covar_log_wk", gediwk,".txt",sep=""),append=TRUE)
+                        return(NULL)
+                      } else{
+                        log_mes <- paste(pid,"-Matching without wwfecoreg:Succeed\n",sep="")
+                        dir.create(paste(paste(f.path,"WDPA_matching_log/",iso3,sep="")))
+                        cat(log_mes,file=paste(f.path,"WDPA_matching_log/",iso3,"/",iso3,"_pa_",pid,"_matching_used_covar_log_wk", gediwk,".txt",sep=""),append=TRUE)
+                        match_results <- list("match_obj" = m, "df" = this_d, "func"=f, "prematch_d"=prematch_d)
+                        return(match_results)
+                      }
                     } else {
+                      log_mes <- paste(pid,"-Matching with wwfecoreg:Succeed\n",sep="")
                       match_results <- list("match_obj" = m, "df" = this_d, "func"=f, "prematch_d"=prematch_d)
+                      dir.create(paste(paste(f.path,"WDPA_matching_log/",iso3,sep="")))
+                      cat(log_mes,file=paste(f.path,"WDPA_matching_log/",iso3,"/",iso3,"_pa_",pid,"_matching_used_covar_log_wk", gediwk,".txt",sep=""),append=TRUE)
                       return(match_results)
                     }
                   }
