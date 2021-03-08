@@ -7,7 +7,7 @@ options(warn=-1)
 options(dplyr.summarise.inform = FALSE)
 
 packages <- c("sp","rgdal","sf","rgeos","dplyr","plyr","ggplot2","raster","mapview","stringr",
-              "maptools","gridExtra","lattice","MASS","foreach","optmatch","doParallel","RItools",
+              "maptools","gridExtra","lattice","MASS","foreach","optmatch","doParallel","RItools","gdalUtils",
               "rlang","tidyr","magrittr","viridis","ggmap","Hmisc","hrbrthemes","spatialEco","bit64","randomForest", "modelr")
 package.check <- lapply(packages, FUN = function(x) {
   suppressPackageStartupMessages(library(x, character.only = TRUE))
@@ -98,59 +98,10 @@ foreach(this_rds=matched_PAs, .combine = foreach_rbind, .packages=c('sp','magrit
     if(table(mras$status[])[2]==0 | table(mras$status[])[1]==0){
       cat("Rasterized results unbalanced for PA", id_pa, "quitting...\n")
     } else {
-      #do a bit of filtering to reduce # of l2a+l2b files pulled in 
-      lon_bond <- range(matched$lon,na.rm=T)
-      lat_bond <- range(matched$lat,na.rm=T)
-      all_gedil2_f <- list.files(file.path(f.path,"WDPA_gedi_l2a+l2b_clean",iso3), full.names = FALSE) 
-      gedil2_f <- all_gedil2_f%>% strsplit( "_") %>% 
-          as.data.frame() %>% 
-          t() %>% as.data.frame(row.names =all_gedil2_f, stringsAsFactors=FALSE,make.names=FALSE) %>% dplyr::select(V3,V4) %>% 
-          mutate(lons=as.numeric(gsub('\\D','', V3)), ew= gsub('\\d','', V3) ) %>% 
-        mutate(lats= as.numeric(gsub('\\D','', V4)), ns= gsub('\\d','', V4) ) %>% 
-        mutate( lons = ifelse(ew!="E", -1*lons, lons)) %>% 
-        mutate( lats = ifelse(ns!="N", -1*lats, lats)) %>% 
-        dplyr::filter( between(lons, floor(lon_bond[1]), ceiling(lon_bond[2]))) %>% 
-        dplyr::filter(between(lats, floor(lat_bond[1]), ceiling(lat_bond[2]))) %>% rownames()
-      
-      # gedil2_f <- list.files(file.path(f.path,"WDPA_gedi_l2a+l2b_clean",iso3), full.names = TRUE)
-      registerDoParallel(cores=round(mproc*0.5))
-      iso_matched_gedi <- foreach(this_csv=gedil2_f, .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','raster')) %dopar% {
-        ##add the GEDI l4a model prediction for AGB here :
-        cat("Readng in no. ", match(this_csv, gedil2_f),"csv of ", length(gedil2_f),"csvs for iso3",iso3,"\n")
-        gedi_l2  <- read.csv(paste(f.path,"WDPA_gedi_l2a+l2b_clean",iso3,this_csv, sep="/")) %>%
-          dplyr::select(shot_number,lon_lowestmode, lat_lowestmode, starts_with("rh_"),cover, pai)%>%
-          SpatialPointsDataFrame(coords=.[,c("lon_lowestmode","lat_lowestmode")],
-                                 proj4string=CRS("+init=epsg:4326"), data=.) %>%spTransform(., CRS("+init=epsg:6933"))
-        
-        iso_matched_gedi_df <- data.frame()
-        matched_gedi <- raster::extract(mras,gedi_l2, df=TRUE)
-        matched_gedi_metrics <- cbind(matched_gedi,gedi_l2@data)
-        
-        matched_gedi_metrics_filtered <- matched_gedi_metrics %>% dplyr::filter(!is.na(status)) %>% 
-          convertFactor(matched0 = matched,exgedi = .) 
-        
-        matched_gedi_l4a <-matched_gedi_metrics_filtered %>% 
-          dplyr::mutate(
-            LAT=lat_lowestmode,
-            LON=lon_lowestmode,
-            REGION=region,
-            PFT=pft,
-            RH_10=rh_010+100,
-            RH_20=rh_020+100,
-            RH_30=rh_030+100,
-            RH_40=rh_040+100,
-            RH_50=rh_050+100,
-            RH_60=rh_060+100,
-            RH_70=rh_070+100,
-            RH_80=rh_080+100,
-            RH_90=rh_090+100,
-            RH_98=rh_098+100) %>% 
-          modelr::add_predictions(model2, "AGBD")
-        iso_matched_gedi_df <- rbind(matched_gedi_l4a,iso_matched_gedi_df)
-        return(iso_matched_gedi_df)
-      }
-      stopImplicitCluster()
-      cat("Done GEDI for no. ", match(this_rds,matched_PAs),"pa out of", length(matched_PAs),"\n")
+      startTime <- Sys.time()
+      iso_matched_gedi<- extract_gedi(matched=matched, mras = mras)  #run filtered csvs on mras for extarction 
+      tElapsed <- Sys.time()-startTime
+      cat(tElapsed, "for extracting all PAs in", iso3,"\n")
       
       iso_matched_gedi_sub <- iso_matched_gedi %>% 
         dplyr::select("pa_id","shot_number","status","DESIG_ENG.x","wwfbiom","wwfecoreg","PADDD","pft","region","lon_lowestmode","lat_lowestmode",
