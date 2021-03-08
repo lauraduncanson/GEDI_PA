@@ -63,8 +63,15 @@ if(!file.exists(paste(f.path,"WDPA_grids/",iso3,"_grid_wk",gediwk,".RDS", sep=""
                                proj4string=CRS("+init=epsg:4326"))
     gedi_pts_prj <- spTransform(gedi_pts, "+init=epsg:6933")
     
-    GRID.lons.overlap <- GRID.lons.adm.m[gedi_pts_prj]
-    GRID.lats.overlap <- GRID.lats.adm.m[gedi_pts_prj]
+    gcount_ras <- rasterize(coordinates(gedi_pts_prj),GRID.lons.adm.m , fun="count",background=NA)
+    names(gcount_ras) <- "gshot_counts"
+    pxid <- raster::extract(gcount_ras,  gedi_pts_prj)
+    gedi_pts_prj %>% 
+      SpatialPointsDataFrame(., data=data.frame(pxid)) ->gedi_pts_prj_sp
+    gedi_pts_prj_sp[gedi_pts_prj_sp$pxid>5,]->gedi_pts_prj_filtered  #change the numeric threshold to filter with a different min # of GEDI shots in each 1km cell
+    
+    GRID.lons.overlap <- GRID.lons.adm.m[gedi_pts_prj_filtered]
+    GRID.lats.overlap <- GRID.lats.adm.m[gedi_pts_prj_filtered]
     
     x.overlap <- GRID.lons.overlap[!is.na(GRID.lons.overlap)]
     y.overlap <- GRID.lats.overlap[!is.na(GRID.lats.overlap)]
@@ -73,7 +80,6 @@ if(!file.exists(paste(f.path,"WDPA_grids/",iso3,"_grid_wk",gediwk,".RDS", sep=""
     xy.overlap.clean <- unique(xy.overlap)
     
     GRID.coords <- rbind(GRID.coords, xy.overlap.clean) 
-    
   }
   GRID.for.matching <- SpatialPoints(coords = GRID.coords, proj4string=CRS("+init=epsg:4326"))
   saveRDS(GRID.for.matching, file = paste(f.path,"WDPA_grids/",iso3,"_grid_wk",gediwk,".RDS", sep=""))
