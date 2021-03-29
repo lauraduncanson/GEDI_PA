@@ -59,13 +59,12 @@ matched_PAs= foreach(this_rds=matched_all, .combine = c, .packages=c('sp','magri
   }
   return(matched_PAs)
 }
-
 if(flag=="run all"){
   matched_PAs=matched_PAs
   cat("Step 5: runing extraction on all", length(matched_PAs),"of non-NA matched results in", iso3,"\n")
 } else if (flag=="run remaining"){
   pattern1 = c(paste("wk",gediwk,sep=""),"RDS")
-  extracted_PAid <- list.files(paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,"/",sep=""), full.names = F, pattern=paste0(pattern1, collapse="|"))%>% 
+  extracted_PAid <- list.files(paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,"_reall4_test/",sep=""), full.names = F, pattern=paste0(pattern1, collapse="|"))%>%
     readr::parse_number() %>% unique()
   matched_PA_id <- matched_PAs %>% readr::parse_number()
   runPA_id <- matched_PA_id[!(matched_PA_id %in% extracted_PAid)]
@@ -95,30 +94,28 @@ foreach(this_rds=matched_PAs, .combine = foreach_rbind, .packages=c('sp','magrit
                         cat("Matched result is likely null for country", iso3,"pa", id_pa, "dimension of the match is", dim(matched),"\n")
                         # writeLines("Matched results is likely null for country", paste(f.path,"WDPA_log/",iso3,"_log_matching.txt", sep=""))
                         return(NULL)}) #convert the macthed df to a raster stack 
-    if(table(mras$status[])[2]==0 | table(mras$status[])[1]==0){
+    if(table(mras$status[])[2]==0 | table(mras$status[])[1]==0 | is.null(mras)){
       cat("Rasterized results unbalanced for PA", id_pa, "quitting...\n")
     } else {
       startTime <- Sys.time()
-      iso_matched_gedi<- extract_gedi(matched=matched, mras = mras)  #run filtered csvs on mras for extarction 
+      iso_matched_gedi<- extract_gedi(matched=matched, mras = mras)  #run filtered csvs on mras for extarction
       tElapsed <- Sys.time()-startTime
       cat(tElapsed, "for extracting all PAs in", iso3,"\n")
-      
-      iso_matched_gedi_sub <- iso_matched_gedi %>% 
-        dplyr::select("pa_id","shot_number","status","DESIG_ENG.x","wwfbiom","wwfecoreg","PADDD","pft","region","lon_lowestmode","lat_lowestmode",
-                      "rh_010","rh_020", "rh_030", "rh_040",  "rh_050",  "rh_060" , "rh_070","rh_075",  "rh_080",  "rh_090",  "rh_098", "AGBD","cover","pai","REGION","PFT")  #write to individual country folder
-      
-      if (length(unique(iso_matched_gedi_sub$wwfbiom)) >1){
-        pabiome <- iso_matched_gedi_sub$wwfbiom %>% unique() %>% gsub('\\b(\\pL)\\pL{2,}|.','\\U\\1',.,perl = TRUE)%>% str_c( collapse = "+")
-      } else if (length(unique(iso_matched_gedi_sub$wwfbiom))==1){
-        pabiome <- iso_matched_gedi_sub$wwfbiom %>% unique() %>% gsub('\\b(\\pL)\\pL{2,}|.','\\U\\1',.,perl = TRUE)
+      # iso_matched_gedi_sub <- iso_matched_gedi %>%
+      #   dplyr::select("pa_id","shot_number","status","DESIG_ENG.x","wwfbiom","wwfecoreg","PADDD","pft","region","lon_lowestmode","lat_lowestmode",
+      #                 "rh_010","rh_020", "rh_030", "rh_040",  "rh_050",  "rh_060" , "rh_070","rh_075",  "rh_080",  "rh_090",  "rh_098", "AGBD","cover","pai","REGION","PFT")  #write to individual country folder
+      if (length(unique(iso_matched_gedi$wwfbiom)) >1){
+        pabiome <- iso_matched_gedi$wwfbiom %>% unique() %>% gsub('\\b(\\pL)\\pL{2,}|.','\\U\\1',.,perl = TRUE)%>% str_c( collapse = "+")
+      } else if (length(unique(iso_matched_gedi$wwfbiom))==1){
+        pabiome <- iso_matched_gedi$wwfbiom %>% unique() %>% gsub('\\b(\\pL)\\pL{2,}|.','\\U\\1',.,perl = TRUE)
       } else {
-        pabiome <- iso_matched_gedi_sub$wwfbiom %>% unique()
+        pabiome <- iso_matched_gedi$wwfbiom %>% unique()
       }
-      papaddd <- unique(iso_matched_gedi_sub$PADDD) %>% getmode()
-      continent <- unique(iso_matched_gedi_sub$REGION) %>% getmode()
-      
-      dir.create(file.path(paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,"/",sep="")))
-      saveRDS(iso_matched_gedi_sub, file=paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,"/",iso3,"_pa_", id_pa,"_gedi_wk_",gediwk,"_conti_", continent,"_biome_",pabiome,"_paddd_",papaddd,".RDS", sep=""))
+      # papaddd <- unique(iso_matched_gedi$PADDD) %>% getmode()
+      continent <- unique(iso_matched_gedi$region) %>% getmode()
+
+      dir.create(file.path(paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,"_reall4_test/",sep="")))
+      saveRDS(iso_matched_gedi, file=paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,"_reall4_test/",iso3,"_pa_", id_pa,"_gedi_wk_",gediwk,"_conti_", continent,"_biome_",pabiome,".RDS", sep=""))
       cat(id_pa,"in",iso3,"results is written to dir\n")
       # write.csv(iso_matched_gedi_sub, file=paste(f.path,"WDPA_GEDI_extract2/",iso3,"_wk",gediwk,"/",iso3,"_pa_", id_pa,"_iso_matched_gedi_sub_wk_",gediwk,".csv", sep=""))
     }
