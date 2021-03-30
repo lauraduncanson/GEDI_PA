@@ -64,7 +64,7 @@ if(flag=="run all"){
   cat("Step 5: runing extraction on all", length(matched_PAs),"of non-NA matched results in", iso3,"\n")
 } else if (flag=="run remaining"){
   pattern1 = c(paste("wk",gediwk,sep=""),"RDS")
-  extracted_PAid <- list.files(paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,"_reall4_test/",sep=""), full.names = F, pattern=paste0(pattern1, collapse="|"))%>%
+  extracted_PAid <- list.files(paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,"/",sep=""), full.names = F, pattern=paste0(pattern1, collapse="|"))%>%
     readr::parse_number() %>% unique()
   matched_PA_id <- matched_PAs %>% readr::parse_number()
   runPA_id <- matched_PA_id[!(matched_PA_id %in% extracted_PAid)]
@@ -114,8 +114,8 @@ foreach(this_rds=matched_PAs, .combine = foreach_rbind, .packages=c('sp','magrit
       # papaddd <- unique(iso_matched_gedi$PADDD) %>% getmode()
       continent <- unique(iso_matched_gedi$region) %>% getmode()
 
-      dir.create(file.path(paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,"_reall4_test/",sep="")))
-      saveRDS(iso_matched_gedi, file=paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,"_reall4_test/",iso3,"_pa_", id_pa,"_gedi_wk_",gediwk,"_conti_", continent,"_biome_",pabiome,".RDS", sep=""))
+      dir.create(file.path(paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,"/",sep="")))
+      saveRDS(iso_matched_gedi, file=paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,"/",iso3,"_pa_", id_pa,"_gedi_wk_",gediwk,"_conti_", continent,"_biome_",pabiome,".RDS", sep=""))
       cat(id_pa,"in",iso3,"results is written to dir\n")
       # write.csv(iso_matched_gedi_sub, file=paste(f.path,"WDPA_GEDI_extract2/",iso3,"_wk",gediwk,"/",iso3,"_pa_", id_pa,"_iso_matched_gedi_sub_wk_",gediwk,".csv", sep=""))
     }
