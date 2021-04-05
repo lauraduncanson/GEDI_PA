@@ -1,18 +1,18 @@
 options(warn=-1)
 options(dplyr.summarise.inform = FALSE)
 
-ppath <- "/gpfs/data1/duncansongp/amberliang/PADDDtracker_DataReleaseV2_May2019/"
-poly <- readOGR(paste(ppath,"PADDDtracker_DataReleaseV2_May2019_Poly.shp",sep=""),verbose = FALSE) %>% spTransform(., CRS("+init=epsg:6933"))
-pts <- readOGR(paste(ppath,"PADDDtracker_DataReleaseV2_May2019_Pts.shp",sep=""), verbose = FALSE) %>% spTransform(., CRS("+init=epsg:6933"))
-poly$Location_K <- toupper(poly$Location_K)
-poly <- poly[poly$Location_K =="Y",]
-poly$EventType <- as.numeric(poly$EventType) 
-poly$EventType[is.na(poly$EventType)] <- 0
-
-pts$Location_K <- toupper(pts$Location_K)
-pts <- pts[pts$Location_K =="Y",]
-pts$EventType <- as.numeric(pts$EventType) 
-pts$EventType[is.na(pts$EventType)] <- 0
+# ppath <- "/gpfs/data1/duncansongp/amberliang/PADDDtracker_DataReleaseV2_May2019/"
+# poly <- readOGR(paste(ppath,"PADDDtracker_DataReleaseV2_May2019_Poly.shp",sep=""),verbose = FALSE) %>% spTransform(., CRS("+init=epsg:6933"))
+# pts <- readOGR(paste(ppath,"PADDDtracker_DataReleaseV2_May2019_Pts.shp",sep=""), verbose = FALSE) %>% spTransform(., CRS("+init=epsg:6933"))
+# poly$Location_K <- toupper(poly$Location_K)
+# poly <- poly[poly$Location_K =="Y",]
+# poly$EventType <- as.numeric(poly$EventType) 
+# poly$EventType[is.na(poly$EventType)] <- 0
+# 
+# pts$Location_K <- toupper(pts$Location_K)
+# pts <- pts[pts$Location_K =="Y",]
+# pts$EventType <- as.numeric(pts$EventType) 
+# pts$EventType[is.na(pts$EventType)] <- 0
 `%notin%` <- Negate(`%in%`)
 
 # Function to allow rbinding dataframes with foreach even when some dataframes 
@@ -423,6 +423,21 @@ SplitRas <- function(raster,ppside){
     r_list[[i]] <- crop(raster,e1)
   }
   return(r_list)
+}
+
+rasExtract2020 <- function(l4_sp){
+  cat(iso3,"converting the matched csv to a raster stack for extraction\n")
+  tif2020 <- c("pop_cnt_2020","pop_den_2020","lc2019","tt2cities_2015","wc_prec_2010-2018","wc_tavg_2010-2018","wc_tmax_2010-2018",
+               "wc_tmin_2010-2018","wwf_biomes","wwf_ecoreg","dem","slope","d2roads","dcities")
+  for (t in 1:length(tif2020)){
+    print(tif2020[t])
+    covar2020 <- raster(paste(f.path, "WDPA_input_vars_iso3_v2/",iso3,"/",tif2020[t],".tif", sep=""))
+    ras_ex <- raster::extract(covar2020, l4_sp@coords, method="simple", factors=F)
+    nm <- names(covar2020)
+    l4_sp <- cbind(l4_sp, ras_ex)
+    names(l4_sp)[t+6] <- tif2020[t]
+  }
+  return(l4_sp)
 }
 
 # iso_matched_gedi <- foreach(this_csv=gedil2_f, .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','raster')) %dopar% {
