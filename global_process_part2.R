@@ -8,7 +8,7 @@ options(dplyr.summarise.inform = FALSE)
 
 packages <- c("sp","rgdal","sf","rgeos","dplyr","plyr","ggplot2","raster","mapview","stringr",
               "maptools","gridExtra","lattice","MASS","foreach","optmatch","doParallel","RItools","gdalUtils",
-              "rlang","tidyr","magrittr","viridis","ggmap","Hmisc","hrbrthemes","spatialEco","bit64","randomForest", "modelr")
+              "rlang","tidyr","magrittr","viridis","ggmap","Hmisc","hrbrthemes","spatialEco","bit64","randomForest", "modelr","ranger","caret")
 package.check <- lapply(packages, FUN = function(x) {
   suppressPackageStartupMessages(library(x, character.only = TRUE))
 })
@@ -229,6 +229,61 @@ iso_sum$continent <- continent
 
 write.csv(iso_sum, file=paste(f.path,"WDPA_GEDI_extract3/iso_stats/",iso3,"_country_stats_summary_wk",gediwk,"2.csv", sep=""), row.names = F)
 cat(iso3,"country level summary stats is exported to /iso_stats/ \n")
+
+#--------------Step 9 Random Forest Modelling AGBD w/ 2020 Covars-------------------------------------------------
+gedil4_folder <- list.files(paste(f.path,"WDPA_gedi_l4a_clean/",iso3,"/",sep=""))
+registerDoParallel(cores=round(mproc*0.5))  #read l4a data, extract values from the 2020 raster stacks and merge into a large df for rf modeling
+ex_out <- foreach(this_csv=gedil4_folder, .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','raster')) %dopar% {
+  ##add the GEDI l4a model prediction for AGB here :
+  cat("Readng in no. ", this_csv,"csv of ", length(gedil4_folder),"csvs for iso3",iso3,"\n")
+  gedi_l4  <- read.csv(paste(f.path,"WDPA_gedi_l4a_clean/",iso3,"/",this_csv, sep="/")) %>%
+    dplyr::select(shot_number, agbd, agbd_se, lat_lowestmode, lon_lowestmode, l4_quality_flag)
+  gedi_l4_sp <- gedi_l4 %>% 
+    SpatialPointsDataFrame(coords=.[,c("lon_lowestmode","lat_lowestmode")],
+                           proj4string=CRS("+init=epsg:4326"), data=.) #%>%spTransform(., CRS("+init=epsg:6933"))
+  gedil4_covar <- rasExtract2020(gedi_l4_sp)
+  
+  iso_l4_covar <- data.frame()
+  gedil4_covar_filtered <-gedil4_covar@data %>% dplyr::filter(!is.na(agbd)) %>% dplyr::filter(l4_quality_flag==1) #export only the quality filtered observations
+  gedil4_covar_filtered[gedil4_covar_filtered==-9999]=NA
+  gedil4_covar_filtered <- gedil4_covar_filtered[complete.cases(gedil4_covar_filtered),]
+  iso_l4_covar <- rbind(gedil4_covar_filtered,iso_l4_covar)
+  
+  return(iso_l4_covar)
+}
+stopImplicitCluster()
+
+#after extracting predictor variables from the 2020 raster stack, run rf model with at least 10,000 observations
+set.seed(1234)
+samp_df <-ex_out %>% 
+  dplyr::select(-c( agbd_se, lat_lowestmode, lon_lowestmode, l4_quality_flag, shot_number))%>% 
+  dplyr::sample_n(0.05*(nrow(.))) %>% 
+  mutate(lc2019=factor(lc2019),wwf_biomes=factor(wwf_biomes),wwf_ecoreg=factor(wwf_ecoreg))
+if(nrow(samp_df)<10000){
+  samp_df <-ex_out %>% 
+    dplyr::select(-c(agbd_se, lat_lowestmode, lon_lowestmode, l4_quality_flag, shot_number))%>% 
+    dplyr::sample_n(10000) %>% 
+    mutate(lc2019=factor(lc2019),wwf_biomes=factor(wwf_biomes),wwf_ecoreg=factor(wwf_ecoreg))
+}
+cat("dimension of the modelling DF", nrow(samp_df),"\n")
+one_hot <- dummyVars(~ ., samp_df, fullRank = FALSE)
+samp_df_hot <- predict(one_hot, samp_df) %>% as.data.frame()
+names(samp_df_hot) <- make.names(names(samp_df_hot), allow_ = FALSE)
+rf <- ranger(
+  formula         = log(agbd) ~ ., 
+  data            = samp_df_hot, 
+  num.trees = 500,
+  mtry      = floor((length(names(samp_df_hot))-1) / 3),
+  importance      = 'impurity'
+)
+
+rsq <- rf$r.squared
+oob_rmse <- exp(sqrt(rf$prediction.error))
+varImportance <- rf$variable.importance %>% sort(decreasing = TRUE) %>% head(5) %>% names()
+model_params <- data.frame(iso3=iso3, nsample=nrow(samp_df_hot),rsq=rsq, oob_rmse=oob_rmse, 
+                           var1=varImportance[1],var2=varImportance[2], var3=varImportance[3], var4=varImportance[4], var5=varImportance[5])
+write.csv(model_params,paste(f.path,"WDPA_agbd_rf_models/","model_params/","model_params_",iso3,".csv",sep=""))
+saveRDS(rf, paste(f.path,"WDPA_agbd_rf_models/","agbd_rf_model_",iso3,".RDS",sep=""))
 
 #---------------[NOT NEEDED FOR NOW] STEP9: Calculate per biome summary stats, 1 biome per row, removing dup gedi shots in overlapping region------------------------
 # gedi_paf <-list.files(paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,sep=""), pattern=".RDS", full.names = FALSE)
