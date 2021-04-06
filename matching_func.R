@@ -195,39 +195,39 @@ propensity_filter <- function(pa_df, d_control_local){
   return(d_filtered)
 }
 
-isoPadddRas <- function(poly, pts, rtemplate){
-  
-  if((iso3 %in% unique(poly$ISO3166))&&(iso3 %notin% unique(pts$ISO3166))){
-    # print("in poly")
-    polysub <- poly[poly$ISO3166==iso3,]
-    polysubr <- rasterize(polysub,rtemplate,background=NA, field=polysub$EventType)
-    names(polysubr) <- "PADDD"
-    return(polysubr)
-    
-  } else if ((iso3 %notin% unique(poly$ISO3166))&&(iso3 %in% unique(pts$ISO3166))){
-    # print("in pts")
-    ptssub <- pts[pts$ISO3166==iso3,]
-    ptssubr <- rasterize(ptssub@coords[,1:2,drop=FALSE],rtemplate,background=NA, field=ptssub$EventType)
-    names(ptssubr) <- "PADDD"
-    return(ptssubr)
-    
-  } else if ((iso3 %in% unique(poly$ISO3166))&&(iso3 %in% unique(pts$ISO3166))){
-    # print("in both")
-    polysub <- poly[poly$ISO3166==iso3,]
-    polysubr <- rasterize(polysub,rtemplate,background=NA, field=polysub$EventType)
-    ptssub <- pts[pts$ISO3166==iso3,]
-    ptssubr <- rasterize(ptssub@coords[,1:2,drop=FALSE],rtemplate,background=NA, field=ptssub$EventType)
-    m <- merge(polysubr,ptssubr)
-    names(m) <- "PADDD"
-    return(m)
-  } else {
-    # print("in neither")
-    empr <- rtemplate
-    values(empr) <- NA
-    names(empr) <- "PADDD"
-    return(empr)
-  }
-}
+# isoPadddRas <- function(poly, pts, rtemplate){
+#   
+#   if((iso3 %in% unique(poly$ISO3166))&&(iso3 %notin% unique(pts$ISO3166))){
+#     # print("in poly")
+#     polysub <- poly[poly$ISO3166==iso3,]
+#     polysubr <- rasterize(polysub,rtemplate,background=NA, field=polysub$EventType)
+#     names(polysubr) <- "PADDD"
+#     return(polysubr)
+#     
+#   } else if ((iso3 %notin% unique(poly$ISO3166))&&(iso3 %in% unique(pts$ISO3166))){
+#     # print("in pts")
+#     ptssub <- pts[pts$ISO3166==iso3,]
+#     ptssubr <- rasterize(ptssub@coords[,1:2,drop=FALSE],rtemplate,background=NA, field=ptssub$EventType)
+#     names(ptssubr) <- "PADDD"
+#     return(ptssubr)
+#     
+#   } else if ((iso3 %in% unique(poly$ISO3166))&&(iso3 %in% unique(pts$ISO3166))){
+#     # print("in both")
+#     polysub <- poly[poly$ISO3166==iso3,]
+#     polysubr <- rasterize(polysub,rtemplate,background=NA, field=polysub$EventType)
+#     ptssub <- pts[pts$ISO3166==iso3,]
+#     ptssubr <- rasterize(ptssub@coords[,1:2,drop=FALSE],rtemplate,background=NA, field=ptssub$EventType)
+#     m <- merge(polysubr,ptssubr)
+#     names(m) <- "PADDD"
+#     return(m)
+#   } else {
+#     # print("in neither")
+#     empr <- rtemplate
+#     values(empr) <- NA
+#     names(empr) <- "PADDD"
+#     return(empr)
+#   }
+# }
 matched2ras <- function(matched_df){
   cat(iso3,"converting the matched csv to a raster stack for extraction\n")
   
