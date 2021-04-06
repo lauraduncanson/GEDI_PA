@@ -114,7 +114,7 @@ match_wocat <- function(df, pid) {
                       
                       this_d$land_cover <- droplevels(this_d$land_cover)
                       this_d$wwfbiom <- droplevels(this_d$wwfbiom)
-                      f <- status ~ mean_temp + prec + elevation + slope+ d2road + d2city + popden + tt2city
+                      f <- status ~ mean_temp + max_temp + min_temp + prec + elevation + slope + d2road + d2city + popden + popcnt + tt2city
                       if (nlevels(this_d$land_cover) >= 2) {
                         f <- update(f, ~ . + strata(land_cover))
                       } else {
@@ -172,13 +172,13 @@ propensity_filter <- function(pa_df, d_control_local){
   ## bring in matching algorithm from STEP5 here to loop through each PA in d_PAs
   #filter controls based on propensity scores 
   d_all <- dplyr::select(d, lat, lon, UID, status, land_cover, wwfbiom, wwfecoreg, elevation, slope,
-                         mean_temp, prec,  d2road, d2city,  popden, tt2city, 
+                         mean_temp,max_temp,min_temp, prec, d2road, d2city,  popden, tt2city, 
                          DESIG_ENG) 
   
   d_all$status <- ifelse(d_all$status==TRUE,1,0)
   
   #calculate the propensity scores & filter out controls not overlapping w/ treatment propensity scores
-  ps <- glm(status ~ mean_temp + prec + elevation + slope+ d2road + d2city + popden + tt2city,data = d_all)
+  ps <- glm(status ~ mean_temp+max_temp+min_temp + prec + elevation + slope+ d2road + d2city + popden +popcnt+ tt2city,data = d_all)
   # boxplot(ps)  #check the distribution of propensity scores for treatment and controls
   #filter out the controls with propensity scores outside of the overlapping region
   d_all$propensity_score <- fitted(ps)
