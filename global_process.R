@@ -27,8 +27,10 @@ cat("Step 0: Loading global variables to process country", iso3,"with GEDI data 
 
 f.path <- "/gpfs/data1/duncansongp/GEDI_global_PA/"
 exclude <- c("mean_gHM","pop_cnt_2000")
-tifs <- list.files(paste(f.path,"WDPA_input_vars_iso3/",iso3,"/",sep=""),full.names=T) %>% .[str_detect(., exclude, negate = TRUE)]
-tifs.name <- str_match(tifs, "//\\s*(.*?)\\s*.tif")[,2]
+# tifs <- list.files(paste(f.path,"WDPA_input_vars_iso3_v2/",iso3,"/",sep=""),full.names=T) %>% .[str_detect(., exclude, negate = TRUE)]
+# tifs.name <- str_match(tifs, "//\\s*(.*?)\\s*.tif")[,2]
+matching_tifs <- c("wwf_biomes","wwf_ecoreg","lc2000","d2roads", "dcities","dem","pop_cnt_2000","pop_den_2000","slope", "tt2cities_2000", "wc_prec_1990-1999",
+                   "wc_tmax_1990-1999","wc_tavg_1990-1999","wc_tmin_1990-1999" )
 ecoreg_key <- read.csv(paste(f.path,"wwf_ecoregions_key.csv",sep=""))
 allPAs <- readRDS(paste(f.path,"WDPA_shapefiles/WDPA_polygons/",iso3,"_PA_poly.rds",sep=""))
 MCD12Q1 <- raster(paste(f.path,"GEDI_ANCI_PFT_r1000m_EASE2.0_UMD_v1_projection_defined_6933.tif",sep=""))
@@ -114,28 +116,33 @@ if(!file.exists(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_prepped_con
                             writeLines("Country too samll, after buffer no grid left", paste(f.path,"WDPA_log/",iso3,"_log_control.txt", sep=""))
                             return(quit(save="no"))})
     
-  for (j in 1:length(tifs)){
-    ras <- raster(tifs[j])
+  for (j in 1:length(matching_tifs)){
+    ras <- raster(paste(f.path, "WDPA_input_vars_iso3_v2/",iso3,"/",matching_tifs[j],".tif", sep=""))
+    print(matching_tifs[j])
     ras_ex <- raster::extract(ras, nonPA_spdf@coords, method="simple", factors=F)
     nm <- names(ras)
     nonPA_spdf <- cbind(nonPA_spdf, ras_ex)
-    names(nonPA_spdf)[j+2] <- tifs.name[j]
+    names(nonPA_spdf)[j+2] <- matching_tifs[j]
     
   }
   d_control <- nonPA_spdf
   d_control$status <- as.logical("FALSE")
+  names(d_control) <- make.names(names(d_control), allow_ = FALSE)
   d_control <- data.frame(d_control) %>%
     dplyr::rename(
       land_cover = lc2000,
       slope = slope,
       elevation = dem,
-      popden = pop_den_2000,
-      mean_temp = annual_mean_temp,
-      prec = annual_prec,
-      wwfbiom = wwf_biomes,
-      wwfecoreg = wwf_ecoreg,
+      popden = pop.den.2000,
+      popcnt=pop.cnt.2000,
+      min_temp=wc.tmin.1990.1999,
+      max_temp=wc.tmax.1990.1999,
+      mean_temp = wc.tavg.1990.1999,
+      prec = wc.prec.1990.1999,
+      tt2city= tt2cities.2000,
+      wwfbiom = wwf.biomes,
+      wwfecoreg = wwf.ecoreg,
       d2city = dcities,
-      tt2city= tt2cities,
       d2road = d2roads,
       lon = x,
       lat = y)
@@ -184,15 +191,13 @@ if(length(dir(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs","/",
       colnames(testPA_xy) <- c("x","y")
       testPA_spdf <- SpatialPointsDataFrame(testPA_xy, data=data.frame(testPA_xy),
                                             proj4string=CRS("+init=epsg:4326"))
-      for (j in 1:length(tifs)){
-        ras <- raster(tifs[j])
+      for (j in 1:length(matching_tifs)){
+        ras <- raster(paste(f.path, "WDPA_input_vars_iso3_v2/",iso3,"/",matching_tifs[j],".tif", sep=""))
         ras <- crop(ras, testPA)
-        #ras_prj <- projectRaster(ras, crs="+init=epsg:4326", method="ngb")
         ras_ex <- raster::extract(ras, testPA_spdf@coords, method="simple", factors=F)
         nm <- names(ras)
-        
         testPA_spdf <- cbind(testPA_spdf, ras_ex)
-        names(testPA_spdf)[j+2] <- tifs.name[j]
+        names(testPA_spdf)[j+2] <- matching_tifs[j]
         
       }
       d_pa <- testPA_spdf
@@ -204,18 +209,22 @@ if(length(dir(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs","/",
       d_pa$GOV_TYPE <- testPA$GOV_TYPE
       d_pa$OWN_TYPE <- testPA$OWN_TYPE
       d_pa$MANG_AUTH <- testPA$MANG_AUTH
+      names(d_pa) <- make.names(names(d_pa), allow_ = FALSE)
       d_pa <- data.frame(d_pa) %>%
         dplyr::rename(
           land_cover = lc2000,
           slope = slope,
           elevation = dem,
-          popden = pop_den_2000,
-          mean_temp = annual_mean_temp,
-          prec = annual_prec,
-          wwfbiom = wwf_biomes,
-          wwfecoreg = wwf_ecoreg,
+          popden = pop.den.2000,
+          popcnt=pop.cnt.2000,
+          min_temp=wc.tmin.1990.1999,
+          max_temp=wc.tmax.1990.1999,
+          mean_temp = wc.tavg.1990.1999,
+          prec = wc.prec.1990.1999,
+          tt2city= tt2cities.2000,
+          wwfbiom = wwf.biomes,
+          wwfecoreg = wwf.ecoreg,
           d2city = dcities,
-          tt2city= tt2cities,
           d2road = d2roads,
           lon = x,
           lat = y)
