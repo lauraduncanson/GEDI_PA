@@ -269,6 +269,7 @@ cat("dimension of the modelling DF", nrow(samp_df),"\n")
 one_hot <- dummyVars(~ ., samp_df, fullRank = FALSE)
 samp_df_hot <- predict(one_hot, samp_df) %>% as.data.frame()
 names(samp_df_hot) <- make.names(names(samp_df_hot), allow_ = FALSE)
+samp_df_hot$agbd[samp_df_hot$agbd==0] <- 0.01
 rf <- ranger(
   formula         = log(agbd) ~ ., 
   data            = samp_df_hot, 
