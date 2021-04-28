@@ -64,7 +64,7 @@ match_wocat <- function(df, pid) {
                     this_d$wwfbiom <- droplevels(this_d$wwfbiom)
                     this_d$wwfecoreg <- droplevels(this_d$wwfecoreg)
                     # table(this_d$status)
-                    f <- status ~ mean_temp + prec + elevation + slope+ d2road + d2city + popden + tt2city
+                    f <- status~ mean_temp + max_temp + min_temp + prec + elevation + slope + d2road + d2city + popden + popcnt + tt2city
                     # Can't stratify by land cover or climate if they only have one level
                     if (nlevels(this_d$land_cover) >= 2) {
                       f <- update(f, ~ . + strata(land_cover))
@@ -172,8 +172,7 @@ propensity_filter <- function(pa_df, d_control_local){
   ## bring in matching algorithm from STEP5 here to loop through each PA in d_PAs
   #filter controls based on propensity scores 
   d_all <- dplyr::select(d, lat, lon, UID, status, land_cover, wwfbiom, wwfecoreg, elevation, slope,
-                         mean_temp,max_temp,min_temp, prec, d2road, d2city,  popden, tt2city, 
-                         DESIG_ENG) 
+                         mean_temp,max_temp,min_temp, prec, d2road, d2city,  popden, tt2city, popcnt) 
   
   d_all$status <- ifelse(d_all$status==TRUE,1,0)
   
@@ -430,7 +429,7 @@ rasExtract2020 <- function(l4_sp){
   tif2020 <- c("pop_cnt_2020","pop_den_2020","lc2019","tt2cities_2015","wc_prec_2010-2018","wc_tavg_2010-2018","wc_tmax_2010-2018",
                "wc_tmin_2010-2018","wwf_biomes","wwf_ecoreg","dem","slope","d2roads","dcities")
   for (t in 1:length(tif2020)){
-    print(tif2020[t])
+    # print(tif2020[t])
     covar2020 <- raster(paste(f.path, "WDPA_input_vars_iso3_v2/",iso3,"/",tif2020[t],".tif", sep=""))
     ras_ex <- raster::extract(covar2020, l4_sp@coords, method="simple", factors=F)
     nm <- names(covar2020)
