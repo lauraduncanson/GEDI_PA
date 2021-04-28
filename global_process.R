@@ -23,7 +23,7 @@ if (length(args)==0) {
   mproc <- as.integer(args[3])#the number of cores to use for macthing 
 }
 
-cat("Step 0: Loading global variables to process country", iso3,"with GEDI data until week", gediwk, "\n")
+cat("Step 0: Loading global variables for", iso3,"with wk", gediwk, "data \n")
 
 f.path <- "/gpfs/data1/duncansongp/GEDI_global_PA/"
 exclude <- c("mean_gHM","pop_cnt_2000")
@@ -59,7 +59,7 @@ if(!file.exists(paste(f.path,"WDPA_grids/",iso3,"_grid_wk",gediwk,".RDS", sep=""
   GRID.coords <- data.frame()
   for(i in 1:length(dir(gedi_folder))){
     # print(list.files(gedi_folder)[i])
-    gedi_data <- read.csv(list.files(gedi_folder,full.names=T)[i]) %>%
+    gedi_data <- read.csv(list.files(gedi_folder,full.names=TRUE)[i]) %>%
       dplyr::select(lon_lowestmode,lat_lowestmode)
     gedi_pts  <- SpatialPoints(coords=gedi_data[,c("lon_lowestmode","lat_lowestmode")],
                                proj4string=CRS("+init=epsg:4326"))
@@ -70,6 +70,7 @@ if(!file.exists(paste(f.path,"WDPA_grids/",iso3,"_grid_wk",gediwk,".RDS", sep=""
     pxid <- raster::extract(gcount_ras,  gedi_pts_prj)
     gedi_pts_prj %>% 
       SpatialPointsDataFrame(., data=data.frame(pxid)) ->gedi_pts_prj_sp
+    gedi_pts_prj_sp$pxid[is.na(gedi_pts_prj_sp$pxid)] <- 0
     gedi_pts_prj_sp[gedi_pts_prj_sp$pxid>5,]->gedi_pts_prj_filtered  #change the numeric threshold to filter with a different min # of GEDI shots in each 1km cell
     
     GRID.lons.overlap <- GRID.lons.adm.m[gedi_pts_prj_filtered]
@@ -103,7 +104,7 @@ if(!file.exists(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_prepped_con
     PA2         <- spTransform(PA_prj_buff, "+init=epsg:4326")
     overlap     <- GRID.pts.nonPA[PA2]
     if(length(overlap)>0){
-      GRID.pts.nonPA <- erase.point(GRID.pts.nonPA, PA2, inside = T) ##remove pts inside poly
+      GRID.pts.nonPA <- erase.point(GRID.pts.nonPA, PA2, inside = TRUE) ##remove pts inside poly
     } 
     # print(length(GRID.pts.nonPA))
   }
@@ -119,7 +120,7 @@ if(!file.exists(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_prepped_con
   for (j in 1:length(matching_tifs)){
     ras <- raster(paste(f.path, "WDPA_input_vars_iso3_v2/",iso3,"/",matching_tifs[j],".tif", sep=""))
     print(matching_tifs[j])
-    ras_ex <- raster::extract(ras, nonPA_spdf@coords, method="simple", factors=F)
+    ras_ex <- raster::extract(ras, nonPA_spdf@coords, method="simple", factors=FALSE)
     nm <- names(ras)
     nonPA_spdf <- cbind(nonPA_spdf, ras_ex)
     names(nonPA_spdf)[j+2] <- matching_tifs[j]
@@ -255,19 +256,19 @@ if(length(dir(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs","/",
 #STEP4. Set up spatial points data frames (control + each PA) for point matching
 # if (file.exists(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",iso3,"_matching_output_wk",gediwk,".RDS", sep=""))){
 cat("Step 4: Performing matching for", iso3,"\n")
-d_control_local <- readRDS(file=paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_prepped_control_wk",gediwk,".RDS",sep="")) %>% .[complete.cases(.),]
+d_control_local <- readRDS(file=paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_prepped_control_wk",gediwk,".RDS",sep=""))
 d_control_local <-d_control_local[complete.cases(d_control_local), ]  #filter away non-complete cases w/ NA in control set
 #d_PAs <- list.files(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs/", sep=""),pattern=gediwk,full.names=F)
 
 if(!dir.exists(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",sep=""))){
-  print("Matching result dir EXISTS")
+  # cat("Matching result dir does not EXISTS\n")
   dir.create(file.path(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",sep="")))
-  d_PAs <- list.files(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs/", sep=""), pattern=paste("wk",gediwk,sep=""), full.names=F)
+  d_PAs <- list.files(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs/", sep=""), pattern=paste("wk",gediwk,sep=""), full.names=FALSE)
 } else if (dir.exists(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",sep=""))){
   pattern1 = c(paste("wk",gediwk,sep=""),"RDS")
-  matched_PAid <- list.files(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",sep=""), full.names = F, pattern=paste0(pattern1, collapse="|"))%>% 
+  matched_PAid <- list.files(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",sep=""), full.names = FALSE, pattern=paste0(pattern1, collapse="|"))%>% 
     readr::parse_number() %>% unique()
-  d_PAs<- list.files(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs/", sep=""), pattern=paste("wk",gediwk,sep=""), full.names=F) 
+  d_PAs<- list.files(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs/", sep=""), pattern=paste("wk",gediwk,sep=""), full.names=FALSE) 
   d_PA_id <- d_PAs %>% readr::parse_number()
   runPA_id <- d_PA_id[!(d_PA_id %in% matched_PAid)]
   if (length(runPA_id)>0){
@@ -280,7 +281,7 @@ if(!dir.exists(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",sep="
 }
 
 registerDoParallel(mproc)
-cat("Parallel processing",getDoParWorkers(),"PAs \n")
+# cat("Parallel processing",getDoParWorkers(),"PAs \n")
 startTime <- Sys.time()
 foreach(this_pa=d_PAs,.combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','optmatch','doParallel')) %dopar% {
   pa <- this_pa
@@ -288,24 +289,24 @@ foreach(this_pa=d_PAs,.combine = foreach_rbind, .packages=c('sp','magrittr', 'dp
   # cat(id_pa, "in",iso3,"\n")
   cat("No.", match(pa,d_PAs),"of total",length(d_PAs),"PAs in ", iso3, "\n" )
   d_pa <- readRDS(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs/",pa, sep=""))
-  cat(iso3, "pa no.",id_pa, "has",nrow(d_pa)," of treatment \n")
+  # cat(iso3, "pa no.",id_pa, "has",nrow(d_pa)," of treatment \n")
   d_filtered_prop <- tryCatch(propensity_filter(d_pa, d_control_local), error=function(e) return(NA))  #return a df of control and treatment after complete cases and propensity filters are applied
-  cat("Propensity score filtered DF dimension is",dim(d_filtered_prop),"\n")
+  # cat("Propensity score filtered DF dimension is",dim(d_filtered_prop),"\n")
   d_wocat_all <- tryCatch(filter(d_filtered_prop, status),error=function(e) return(NA))
   d_control_all <- tryCatch(filter(d_filtered_prop, !status),error=function(e) return(NA))
 
-  cat("Using number of cores:",getDoParWorkers(),"\n")
-  l <- split(d_wocat_all, (as.numeric(rownames(d_wocat_all))-1) %/% 300) 
+  # cat("Using number of cores:",getDoParWorkers(),"\n")
+  l <- tryCatch(split(d_wocat_all, (as.numeric(rownames(d_wocat_all))-1) %/% 300),error=function(e) return(0))
   
   if (length(l)>0){
     registerDoParallel(3)
     pa_match <- foreach(pa_c=1:length(l), .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','optmatch','doParallel'))%dopar%{
-      cat("Matching treatment chunk", pa_c, "out of", length(l), "for PA", id_pa,"\n")
+      # cat("Matching treatment chunk", pa_c, "out of", length(l), "for PA", id_pa,"\n")
       d_wocat_chunk <- l[[pa_c]]
       # #sample the control dataset to the size of the sample dataset, keep unsampled ids to iterate until full number of matches found
       n_treatment <- dim(d_wocat_chunk)[1]
       n_control <- dim(d_control_all)[1]
-      t <- ifelse(floor(n_control/n_treatment)<=7, ifelse(floor(n_control/n_treatment)<1, 1,floor(n_control/n_treatment)),7)
+      t <- ifelse(floor(n_control/n_treatment)<=7, ifelse(floor(n_control/n_treatment)<1, 1,floor(n_control/n_treatment)),floor(n_control/n_treatment))
       n_sample <- round(n_treatment*t)    #now the n_control is 1.4 times the number of n_treatment, 7 will set the if ststament below to flase
       ids_all <- seq(1,n_control)
       m_all2_out <- data.frame()
@@ -317,20 +318,20 @@ foreach(this_pa=d_PAs,.combine = foreach_rbind, .packages=c('sp','magrittr', 'dp
           
           n_ids <- length(ids_all)
           if(n_ids > n_sample){
+            set.seed(125)
             sample_ids <- sample(ids_all, n_sample)
-            cat("currently sampling",length(sample_ids), "for PA",id_pa,"\n")
+            
             d_control_sample <- d_control_all[sample_ids,]
-            ids_all <- ids_all[-sample_ids]
-            # d_control_all_sp <- SpatialPointsDataFrame(dplyr::select(d_control_sample, lon, lat),
-            #                                                     d_control_sample,
-            #                                                     proj4string=CRS('+init=epsg:4326'))
+            # cat("currently sampling",nrow(d_control_sample), "for PA",id_pa,"\n")
+            
+            ids_all <-setdiff(ids_all, sample_ids)    #ids_all[-sample_ids]
+            cat("ids_all", length(ids_all),"\n")
+
             # All approaches
+            cat("dim of d_wocat_chunk",head(d_wocat_chunk$UID),"\n")
             new_d <- tryCatch(rbind(d_wocat_chunk,d_control_sample),error=function(e) return(NULL))
-            
-            #outside of the match_wocat function check the balance
-            f <- status ~ mean_temp + prec + elevation + slope+ d2road + d2city + popden + tt2city
-            #do a glm here to throw out definitely not control data based on low propensity score (they weren't going to be matching anyways)
-            
+            # new_d <- tryCatch(rbind(d_wocat_chunk,d_control_all),error=function(e) return(NULL))
+
             #create a smaller distance matrix
             m_all <- tryCatch(match_wocat(new_d, pid=id_pa),error=function(e) return(NULL))
             # m_all <- match_wocat(new_d)
@@ -339,13 +340,17 @@ foreach(this_pa=d_PAs,.combine = foreach_rbind, .packages=c('sp','magrittr', 'dp
             n_matches_temp <- tryCatch(nrow(m_all2$df),error=function(e) return(NULL))
             # n_matches_temp <- nrow(m_all2$df)
             if(!is.null(n_matches_temp)){
-              n_matches <- n_matches + nrow(m_all2$df)
+              # n_matches <- n_matches + nrow(m_all2$df)
               m_all2$df$pa_id <- rep(id_pa,n_matches_temp)
               m_all2_out <- rbind(m_all2_out, m_all2$df)
-              
-            } else {
-              n_treatment <- 0  #if not macthes ae found in this sampling
-            }
+              matched_protected <- m_all2$df %>% dplyr::filter(status==TRUE)
+              cat("matched_protected", nrow(matched_protected),"\n")
+              n_matches <- n_matches + nrow(matched_protected)
+              d_wocat_chunk <- d_wocat_chunk[-(match(matched_protected$UID,d_wocat_chunk$UID)),]
+            } 
+            # else {
+            #   n_treatment <- 0  #if not macthes are found in this sampling
+            # }
           } else {n_treatment <- n_matches}
         }, error=function(e) return(NULL))
       
@@ -356,38 +361,38 @@ foreach(this_pa=d_PAs,.combine = foreach_rbind, .packages=c('sp','magrittr', 'dp
                          tibble::rownames_to_column(., "matched"),
                        error=function(e) return(NULL))
       Bscore <- post %>% cbind(id=rep(id_pa,ifelse(is.null(nrow(post)),0, nrow(post))),
-                               DESIG_ENG=rep(unique(d_pa$DESIG_ENG),ifelse(is.null(nrow(post)),0, nrow(post)))) %>%
+                               DESIG_ENG=rep(unique(d_pa$DESIG.ENG),ifelse(is.null(nrow(post)),0, nrow(post)))) %>%
         rbind(Bscore, .)
       match_score <- tryCatch(m_all2_out %>%dplyr::mutate(., id = row_number()) %>%
                                 left_join(Bscore,by=c("pa_id"="id")) %>%
                                 dplyr::filter(matched.y=="Unadj"| matched.y=="m_all2.match_obj") %>%
                                 tidyr::pivot_longer(cols = chisquare:p.value, names_to = "stats") %>%
-                                tidyr::unite(match_stats, matched.y, stats, sep = "_", remove = T) %>%
+                                tidyr::unite(match_stats, matched.y, stats, sep = "_", remove = TRUE) %>%
                                 tidyr::pivot_wider(names_from = match_stats,values_from=value) %>%
                                 dplyr::rename(postmatch_chisquare=m_all2.match_obj_chisquare,postmatch_df=m_all2.match_obj_df,postmatch_pvalue=m_all2.match_obj_p.value,
                                               prematch_chisquare= Unadj_chisquare, prematch_df= Unadj_df, prematch_pvalue=Unadj_p.value),
                               error=function(e) return(NULL))
-      cat(paste("Dimension of matched: ", nrow(m_all2_out),"for PA",id_pa,"\n"))
+      # cat(paste("Dimension of matched: ", nrow(m_all2_out),"for PA",id_pa,"\n"))
       return(match_score)
     }
     stopImplicitCluster()
   } else {
-    cat("Filtered results have 0 observations\n")
+    # cat("Filtered results have 0 observations\n")
     pa_match=NULL
   }
   
   # # write.csv(match_score, file=paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",iso3,"_pa_", id_pa,"_matching_results_wk",gediwk,".csv", sep=""))
   # # return(match_score)
   saveRDS(pa_match, file=paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",iso3,"_pa_", id_pa,"_matching_results_wk",gediwk,".RDS", sep=""))
-  cat("Results exported for PA", id_pa,"\n")
+  # cat("Results exported for PA", id_pa,"\n")
   rm(pa_match)
   return(NULL)
 }
 
 tElapsed <- Sys.time()-startTime
-cat(tElapsed, "for matching all PAs in", iso3,"\n")
+# cat(tElapsed, "for matching all PAs in", iso3,"\n")
 stopImplicitCluster()
-cat("Exported matching results for",iso3,"\n")
+cat("Done matching for",iso3,". Finishing...\n")
  
 
  # writeLines(paste("Full data balanced and exported GEDI extracts using GEDI data until week", gediwk, sep=""), paste(f.path,"WDPA_log/",iso3,"_log_success_wk",gediwk,".txt", sep=""))
