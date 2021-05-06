@@ -26,9 +26,6 @@ if (length(args)==0) {
 cat("Step 0: Loading global variables for", iso3,"with wk", gediwk, "data \n")
 
 f.path <- "/gpfs/data1/duncansongp/GEDI_global_PA/"
-exclude <- c("mean_gHM","pop_cnt_2000")
-# tifs <- list.files(paste(f.path,"WDPA_input_vars_iso3_v2/",iso3,"/",sep=""),full.names=T) %>% .[str_detect(., exclude, negate = TRUE)]
-# tifs.name <- str_match(tifs, "//\\s*(.*?)\\s*.tif")[,2]
 matching_tifs <- c("wwf_biomes","wwf_ecoreg","lc2000","d2roads", "dcities","dem","pop_cnt_2000","pop_den_2000","slope", "tt2cities_2000", "wc_prec_1990-1999",
                    "wc_tmax_1990-1999","wc_tavg_1990-1999","wc_tmin_1990-1999" )
 ecoreg_key <- read.csv(paste(f.path,"wwf_ecoregions_key.csv",sep=""))
@@ -40,6 +37,7 @@ projection(world_region) <- sp::CRS(paste("+init=epsg:",6933,sep=""))
 adm <- readOGR(paste(f.path,"WDPA_countries/shp/",iso3,".shp",sep=""),verbose=F)
 adm_prj <- spTransform(adm, "+init=epsg:6933") 
 load("/gpfs/data1/duncansongp/amberliang/trends.Earth/rf_noclimate.RData")
+# rerunFlag <- "Y"
 source("/gpfs/data1/duncansongp/amberliang/trends.Earth/git/GEDI_PA/matching_func.R")
 
 # STEP1. Create 1km sampling grid with points only where GEDI data is available; first check if grid file exist to avoid reprocessing 
@@ -54,7 +52,7 @@ if(!file.exists(paste(f.path,"WDPA_grids/",iso3,"_grid_wk",gediwk,".RDS", sep=""
   rm(GRID.lats, GRID.lons, GRID.lats.adm, GRID.lons.adm)
   
   #1.3) extract coordinates of raster cells with valid GEDI data in them
-  gedi_folder <- paste(f.path,"WDPA_gedi_l2a+l2b_clean/",iso3,"/",sep="")
+  gedi_folder <- paste(f.path,"WDPA_gedi_l2a+l2b_clean2/",iso3,"/",sep="")
   
   GRID.coords <- data.frame()
   for(i in 1:length(dir(gedi_folder))){
@@ -258,17 +256,16 @@ if(length(dir(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs","/",
 cat("Step 4: Performing matching for", iso3,"\n")
 d_control_local <- readRDS(file=paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_prepped_control_wk",gediwk,".RDS",sep=""))
 d_control_local <-d_control_local[complete.cases(d_control_local), ]  #filter away non-complete cases w/ NA in control set
-#d_PAs <- list.files(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs/", sep=""),pattern=gediwk,full.names=F)
 
 if(!dir.exists(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",sep=""))){
   # cat("Matching result dir does not EXISTS\n")
   dir.create(file.path(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",sep="")))
   d_PAs <- list.files(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs/", sep=""), pattern=paste("wk",gediwk,sep=""), full.names=FALSE)
-} else if (dir.exists(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",sep=""))){
+} else if (dir.exists(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",sep=""))){   #if matching result folder exists, check for any PAs w/o matched results
   pattern1 = c(paste("wk",gediwk,sep=""),"RDS")
-  matched_PAid <- list.files(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",sep=""), full.names = FALSE, pattern=paste0(pattern1, collapse="|"))%>% 
+  matched_PAid <- list.files(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",sep=""), full.names = FALSE, pattern=paste0(pattern1, collapse="|"))%>%
     readr::parse_number() %>% unique()
-  d_PAs<- list.files(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs/", sep=""), pattern=paste("wk",gediwk,sep=""), full.names=FALSE) 
+  d_PAs<- list.files(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs/", sep=""), pattern=paste("wk",gediwk,sep=""), full.names=FALSE)
   d_PA_id <- d_PAs %>% readr::parse_number()
   runPA_id <- d_PA_id[!(d_PA_id %in% matched_PAid)]
   if (length(runPA_id)>0){
@@ -294,44 +291,45 @@ foreach(this_pa=d_PAs,.combine = foreach_rbind, .packages=c('sp','magrittr', 'dp
   # cat("Propensity score filtered DF dimension is",dim(d_filtered_prop),"\n")
   d_wocat_all <- tryCatch(filter(d_filtered_prop, status),error=function(e) return(NA))
   d_control_all <- tryCatch(filter(d_filtered_prop, !status),error=function(e) return(NA))
-
-  # cat("Using number of cores:",getDoParWorkers(),"\n")
-  l <- tryCatch(split(d_wocat_all, (as.numeric(rownames(d_wocat_all))-1) %/% 300),error=function(e) return(0))
   
-  if (length(l)>0){
-    registerDoParallel(3)
-    pa_match <- foreach(pa_c=1:length(l), .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','optmatch','doParallel'))%dopar%{
-      # cat("Matching treatment chunk", pa_c, "out of", length(l), "for PA", id_pa,"\n")
+  n_control <- dim(d_control_all)[1]
+  # ids_all <- d_control_all$UID   #seq(1,n_control)
+  ids_all0 <- d_control_all$UID 
+  set.seed(125)
+  # cat("Using number of cores:",getDoParWorkers(),"\n")
+  N <- ceiling(nrow(d_wocat_all)/300)
+  l <- tryCatch(split(d_wocat_all, sample(1:N, nrow(d_wocat_all), replace=TRUE)),error=function(e) return(0))
+  # l <- tryCatch(split(d_wocat_all, (as.numeric(rownames(d_wocat_all))-1) %/% 300),error=function(e) return(0))
+  
+  if (length(l)<50 && length(l)>0 ){
+    pa_match <- data.frame()
+    for (pa_c in 1:length(l)){
+      ids_all <- d_control_all$UID
+      cat("chunk",pa_c,"of PA", id_pa,"\n")
+      
       d_wocat_chunk <- l[[pa_c]]
       # #sample the control dataset to the size of the sample dataset, keep unsampled ids to iterate until full number of matches found
       n_treatment <- dim(d_wocat_chunk)[1]
-      n_control <- dim(d_control_all)[1]
-      t <- ifelse(floor(n_control/n_treatment)<=7, ifelse(floor(n_control/n_treatment)<1, 1,floor(n_control/n_treatment)),floor(n_control/n_treatment))
+      
+      t <- ifelse(floor(n_control/n_treatment)<=7, ifelse(floor(n_control/n_treatment)<1, 1,floor(n_control/n_treatment)),7)   #floor(n_control/n_treatment))
       n_sample <- round(n_treatment*t)    #now the n_control is 1.4 times the number of n_treatment, 7 will set the if ststament below to flase
-      ids_all <- seq(1,n_control)
       m_all2_out <- data.frame()
       Bscore <- data.frame()
       n_matches <- 0
-      
       tryCatch(
         while(n_matches < n_treatment){
-          
           n_ids <- length(ids_all)
+          cat("n ids",n_ids,"\n")
           if(n_ids > n_sample){
             set.seed(125)
-            sample_ids <- sample(ids_all, n_sample)
-            
-            d_control_sample <- d_control_all[sample_ids,]
-            # cat("currently sampling",nrow(d_control_sample), "for PA",id_pa,"\n")
-            
-            ids_all <-setdiff(ids_all, sample_ids)    #ids_all[-sample_ids]
-            cat("ids_all", length(ids_all),"\n")
-
+            sample_ids_bar <- sample(ids_all, n_sample)
+            sample_ids <- sample(ids_all0, n_sample)
+            d_control_sample <- d_control_all[d_control_all$UID %in% sample_ids,]
+            ids_all <-setdiff(ids_all, sample_ids_bar)    #ids_all[-sample_ids]
+            cat("protected uid", head(d_wocat_chunk$UID),"\n")
             # All approaches
-            cat("dim of d_wocat_chunk",head(d_wocat_chunk$UID),"\n")
             new_d <- tryCatch(rbind(d_wocat_chunk,d_control_sample),error=function(e) return(NULL))
             # new_d <- tryCatch(rbind(d_wocat_chunk,d_control_all),error=function(e) return(NULL))
-
             #create a smaller distance matrix
             m_all <- tryCatch(match_wocat(new_d, pid=id_pa),error=function(e) return(NULL))
             # m_all <- match_wocat(new_d)
@@ -344,46 +342,93 @@ foreach(this_pa=d_PAs,.combine = foreach_rbind, .packages=c('sp','magrittr', 'dp
               m_all2$df$pa_id <- rep(id_pa,n_matches_temp)
               m_all2_out <- rbind(m_all2_out, m_all2$df)
               matched_protected <- m_all2$df %>% dplyr::filter(status==TRUE)
+              matched_control <- m_all2$df %>% dplyr::filter(status==FALSE)
               cat("matched_protected", nrow(matched_protected),"\n")
               n_matches <- n_matches + nrow(matched_protected)
               d_wocat_chunk <- d_wocat_chunk[-(match(matched_protected$UID,d_wocat_chunk$UID)),]
+              # d_control_all <- d_control_all[-(match(matched_control$UID,d_control$UID)),]
             } 
+            # ids_all <-setdiff(ids_all, sample_ids)
+            ids_all0 <-setdiff(ids_all0, matched_control$UID)
             # else {
             #   n_treatment <- 0  #if not macthes are found in this sampling
             # }
           } else {n_treatment <- n_matches}
         }, error=function(e) return(NULL))
+      # ids_all0 <-setdiff(ids_all0, matched_control$UID)
+      match_score <- m_all2_out
+      cat(table(match_score$status),"\n")
+      pa_match <- rbind(pa_match,match_score)
+    }
+  } else if (length(l)>=50){
+    registerDoParallel(3)
+    pa_match <- foreach(pa_c=length(l), .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','optmatch','doParallel'))%dopar%{
+      # cat("Matching treatment chunk", pa_c, "out of", length(l), "for PA", id_pa,"\n")
+      # cat("chunk",pa_c,"\n")
+      # cat("head control",head(ids_all0),"\n")
+      d_wocat_chunk <- l[[pa_c]]
+      # #sample the control dataset to the size of the sample dataset, keep unsampled ids to iterate until full number of matches found
+      n_treatment <- dim(d_wocat_chunk)[1]
+      # cat( "n control", length(ids_all0),"\n")
+      t <- ifelse(floor(n_control/n_treatment)<=7, ifelse(floor(n_control/n_treatment)<1, 1,floor(n_control/n_treatment)),7)   #floor(n_control/n_treatment))
+      n_sample <- round(n_treatment*t)    #now the n_control is 1.4 times the number of n_treatment, 7 will set the if ststament below to flase
+      m_all2_out <- data.frame()
+      Bscore <- data.frame()
+      n_matches <- 0
       
-      post <- tryCatch(xBalance(update(m_all2$func, ~ . + strata(m_all2$match_obj)),
-                                data =m_all2$prematch_d,
-                                report = c("all"))%>%
-                         .$overall%>%
-                         tibble::rownames_to_column(., "matched"),
-                       error=function(e) return(NULL))
-      Bscore <- post %>% cbind(id=rep(id_pa,ifelse(is.null(nrow(post)),0, nrow(post))),
-                               DESIG_ENG=rep(unique(d_pa$DESIG.ENG),ifelse(is.null(nrow(post)),0, nrow(post)))) %>%
-        rbind(Bscore, .)
-      match_score <- tryCatch(m_all2_out %>%dplyr::mutate(., id = row_number()) %>%
-                                left_join(Bscore,by=c("pa_id"="id")) %>%
-                                dplyr::filter(matched.y=="Unadj"| matched.y=="m_all2.match_obj") %>%
-                                tidyr::pivot_longer(cols = chisquare:p.value, names_to = "stats") %>%
-                                tidyr::unite(match_stats, matched.y, stats, sep = "_", remove = TRUE) %>%
-                                tidyr::pivot_wider(names_from = match_stats,values_from=value) %>%
-                                dplyr::rename(postmatch_chisquare=m_all2.match_obj_chisquare,postmatch_df=m_all2.match_obj_df,postmatch_pvalue=m_all2.match_obj_p.value,
-                                              prematch_chisquare= Unadj_chisquare, prematch_df= Unadj_df, prematch_pvalue=Unadj_p.value),
-                              error=function(e) return(NULL))
-      # cat(paste("Dimension of matched: ", nrow(m_all2_out),"for PA",id_pa,"\n"))
+      tryCatch(
+        while(n_matches < n_treatment){
+          
+          n_ids <- length(ids_all0)
+          cat("n ids",n_ids,"\n")
+          if(n_ids > n_sample){
+            set.seed(125)
+            sample_ids_bar <- sample(ids_all, n_sample)
+            sample_ids <- sample(ids_all0, n_sample)
+            d_control_sample <- d_control_all[d_control_all$UID %in% sample_ids,]
+            ids_all <-setdiff(ids_all, sample_ids_bar)    #ids_all[-sample_ids]
+            cat("protected uid", head(d_wocat_chunk$UID),"\n")
+            # All approaches
+            new_d <- tryCatch(rbind(d_wocat_chunk,d_control_sample),error=function(e) return(NULL))
+            # new_d <- tryCatch(rbind(d_wocat_chunk,d_control_all),error=function(e) return(NULL))
+            
+            #create a smaller distance matrix
+            m_all <- tryCatch(match_wocat(new_d, pid=id_pa),error=function(e) return(NULL))
+            # m_all <- match_wocat(new_d)
+            m_all2 <- tryCatch(m_all[1,],error=function(e) return(NULL))
+            # m_all2 <- m_all[1,]
+            n_matches_temp <- tryCatch(nrow(m_all2$df),error=function(e) return(NULL))
+            # n_matches_temp <- nrow(m_all2$df)
+            if(!is.null(n_matches_temp)){
+              # n_matches <- n_matches + nrow(m_all2$df)
+              m_all2$df$pa_id <- rep(id_pa,n_matches_temp)
+              m_all2_out <- rbind(m_all2_out, m_all2$df)
+              matched_protected <- m_all2$df %>% dplyr::filter(status==TRUE)
+              matched_control <- m_all2$df %>% dplyr::filter(status==FALSE)
+              cat("matched_protected", nrow(matched_protected),"\n")
+              n_matches <- n_matches + nrow(matched_protected)
+              d_wocat_chunk <- d_wocat_chunk[-(match(matched_protected$UID,d_wocat_chunk$UID)),]
+              # d_control_all <- d_control_all[-(match(matched_control$UID,d_control$UID)),]
+              # 
+            } 
+            ids_all0 <-setdiff(ids_all0, matched_control$UID)
+            cat( "n control", length(ids_all0),"\n")
+            
+            # else {
+            #   n_treatment <- 0  #if not macthes are found in this sampling
+            # }
+          } else {n_treatment <- n_matches}
+        }, error=function(e) return(NULL))
+      # ids_all0 <-setdiff(ids_all0, matched_control$UID)
+      match_score <- m_all2_out
+      cat(table(match_score$status),"\n")
       return(match_score)
     }
     stopImplicitCluster()
-  } else {
-    # cat("Filtered results have 0 observations\n")
-    pa_match=NULL
+  } else{
+    pa_match <- NULL
   }
-  
-  # # write.csv(match_score, file=paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",iso3,"_pa_", id_pa,"_matching_results_wk",gediwk,".csv", sep=""))
-  # # return(match_score)
-  saveRDS(pa_match, file=paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",iso3,"_pa_", id_pa,"_matching_results_wk",gediwk,".RDS", sep=""))
+    saveRDS(pa_match, file=paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",iso3,"_pa_", id_pa,"_matching_results_wk",gediwk,".RDS", sep=""))
   # cat("Results exported for PA", id_pa,"\n")
   rm(pa_match)
   return(NULL)
