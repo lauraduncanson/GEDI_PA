@@ -294,11 +294,11 @@ foreach(this_pa=d_PAs,.combine = foreach_rbind, .packages=c('sp','magrittr', 'dp
   
   n_control <- dim(d_control_all)[1]
   # ids_all <- d_control_all$UID   #seq(1,n_control)
-  ids_all0 <- d_control_all$UID 
+  ids_all0 <- tryCatch(d_control_all$UID, error=function(e) return(NA))
   set.seed(125)
   # cat("Using number of cores:",getDoParWorkers(),"\n")
   N <- ceiling(nrow(d_wocat_all)/300)
-  l <- tryCatch(split(d_wocat_all, sample(1:N, nrow(d_wocat_all), replace=TRUE)),error=function(e) return(0))
+  l <- tryCatch(split(d_wocat_all, sample(1:N, nrow(d_wocat_all), replace=TRUE)),error=function(e) return(NULL))
   # l <- tryCatch(split(d_wocat_all, (as.numeric(rownames(d_wocat_all))-1) %/% 300),error=function(e) return(0))
   
   if (length(l)<50 && length(l)>0 ){
@@ -319,14 +319,14 @@ foreach(this_pa=d_PAs,.combine = foreach_rbind, .packages=c('sp','magrittr', 'dp
       tryCatch(
         while(n_matches < n_treatment){
           n_ids <- length(ids_all)
-          cat("n ids",n_ids,"\n")
+          # cat("n ids",n_ids,"\n")
           if(n_ids > n_sample){
             set.seed(125)
             sample_ids_bar <- sample(ids_all, n_sample)
             sample_ids <- sample(ids_all0, n_sample)
             d_control_sample <- d_control_all[d_control_all$UID %in% sample_ids,]
             ids_all <-setdiff(ids_all, sample_ids_bar)    #ids_all[-sample_ids]
-            cat("protected uid", head(d_wocat_chunk$UID),"\n")
+            # cat("protected uid", head(d_wocat_chunk$UID),"\n")
             # All approaches
             new_d <- tryCatch(rbind(d_wocat_chunk,d_control_sample),error=function(e) return(NULL))
             # new_d <- tryCatch(rbind(d_wocat_chunk,d_control_all),error=function(e) return(NULL))
