@@ -1,4 +1,4 @@
-# GEDI_PA
+# GEDI_PA analysis
 Scripts for analyzing GEDI data in global protected areas
 
 ## PA analysis workflow (GLOBAL)  as of 05/11/2021
@@ -85,7 +85,7 @@ RF model for other structure metrics RH98, COVER, PAI
 
 -------------------------------------------------------------------------------------------------------------------------------
 
-# GEDI_PA
+# GEDI_PA figures & tables
 Scripts for generating figures and tables for the paper
 
 ...
