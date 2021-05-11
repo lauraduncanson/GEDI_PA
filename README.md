@@ -82,3 +82,10 @@ Random Forest Modelling AGBD w/ 2020 Covars
 #### STEP9b:
 RF model for other structure metrics RH98, COVER, PAI
 
+
+-------------------------------------------------------------------------------------------------------------------------------
+
+# GEDI_PA
+Scripts for generating figures and tables for the paper
+
+...
