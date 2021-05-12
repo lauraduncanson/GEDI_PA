@@ -37,7 +37,6 @@ projection(world_region) <- sp::CRS(paste("+init=epsg:",6933,sep=""))
 adm <- readOGR(paste(f.path,"WDPA_countries/shp/",iso3,".shp",sep=""),verbose=F)
 adm_prj <- spTransform(adm, "+init=epsg:6933") 
 load("/gpfs/data1/duncansongp/amberliang/trends.Earth/rf_noclimate.RData")
-# rerunFlag <- "Y"
 source("/gpfs/data1/duncansongp/amberliang/trends.Earth/git/GEDI_PA/matching_func.R")
 
 # STEP1. Create 1km sampling grid with points only where GEDI data is available; first check if grid file exist to avoid reprocessing 
