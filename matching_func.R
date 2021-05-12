@@ -234,13 +234,13 @@ matched2ras <- function(matched_df){
                                           proj4string=CRS("+init=epsg:4326"), data=matched_df) %>% 
     spTransform(., CRS("+init=epsg:6933"))
   
-  
+    matched_pts$UID <- as.integer(matched_pts$UID)
   matched_pts$pa_id <- as.integer(matched_pts$pa_id)
   matched_pts$status <- as.logical(matched_pts$status)
   # matched_pts$REP_AREA <- matched_pts$REP_AREA%>% as.numeric()
   # matched_pts$PA_STATUSYR <- matched_pts$PA_STATUSYR%>% as.integer()
   # 
-  cols <- c("DESIG_ENG.x","wwfbiom","wwfecoreg")
+  cols <- c("wwfbiom","wwfecoreg")
   matched_pts@data[,cols] %<>% lapply(function(x) as.numeric(x))
   matched_pts@data[,cols][is.na(matched_pts@data[,cols])]<- 0
   
@@ -253,7 +253,7 @@ matched2ras <- function(matched_df){
   # padddr <- isoPadddRas(poly=poly,pts=pts, rtemplate = r)
   
   matched_ras <- rasterize(matched_pts@coords, r,
-                           field=matched_pts@data[,c("status","pa_id","DESIG_ENG.x","wwfbiom","wwfecoreg")],background=NA)%>% 
+                           field=matched_pts@data[,c("status","pa_id","wwfbiom","wwfecoreg","UID")],background=NA)%>% 
     stack(r) %>% stack(continent) 
   # %>% stack(padddr)
   
@@ -290,9 +290,9 @@ convertFactor <- function(matched0, exgedi){
   #   factor(levels=seq(length(levels(matched0$OWN_TYPE))),
   #          labels=levels(matched0$OWN_TYPE))  
   
-  exgedi$DESIG_ENG.x <- exgedi$DESIG_ENG.x %>% 
-    factor(levels=seq(length(levels(matched0$DESIG_ENG.x))),
-           labels=levels(matched0$DESIG_ENG.x))  
+  # exgedi$DESIG_ENG <- exgedi$DESIG_ENG %>% 
+  #   factor(levels=seq(length(levels(matched0$DESIG_ENG))),
+  #          labels=levels(matched0$DESIG_ENG))  
   
   exgedi$wwfbiom <- exgedi$wwfbiom %>% 
     factor(levels=seq(length(levels(matched0$wwfbiom))),
@@ -356,9 +356,9 @@ getmode <- function(v,na.rm) {
 }
 
 extract_gedi <- function(matched, mras){
-  lon_bond <- range(matched$lon,na.rm=T)
-  lat_bond <- range(matched$lat,na.rm=T)
-  all_gedil2_f <- list.files(file.path(f.path,"WDPA_gedi_l2a+l2b_clean",iso3), full.names = FALSE) 
+  lon_bond <- range(matched$lon,na.rm=TRUE)
+  lat_bond <- range(matched$lat,na.rm=TRUE)
+  all_gedil2_f <- list.files(file.path(f.path,"WDPA_gedi_l2a+l2b_clean2",iso3), full.names = FALSE) 
   all_gedil4_f <- list.files(file.path(f.path,"WDPA_gedi_l4a_clean",iso3), full.names = FALSE) 
   gedil2_f <- all_gedil2_f%>% strsplit( "_") %>% 
     as.data.frame() %>% 
@@ -383,8 +383,8 @@ extract_gedi <- function(matched, mras){
   ex_out <- foreach(this_csvid=seq(length(gedil2_f)), .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','raster')) %dopar% {
       ##add the GEDI l4a model prediction for AGB here :
       cat("Readng in no. ", this_csvid,"csv of ", length(gedil2_f),"csvs for iso3",iso3,"\n")
-      gedi_l2  <- read.csv(paste(f.path,"WDPA_gedi_l2a+l2b_clean",iso3,gedil2_f[this_csvid], sep="/")) %>%
-        dplyr::select(shot_number,lon_lowestmode, lat_lowestmode,rh_025, rh_050, rh_075, rh_098, rh_100,cover, pai)
+      gedi_l2  <- read.csv(paste(f.path,"WDPA_gedi_l2a+l2b_clean2",iso3,gedil2_f[this_csvid], sep="/")) %>%
+        dplyr::select(shot_number,lon_lowestmode, lat_lowestmode,rh_025, rh_050, rh_075, rh_098,cover, pai)
       l2_latlon <- gedil2_f[this_csvid] %>%  str_split("_") %>% unlist %>% .[3:4] %>% paste(sep="_", collapse ="_")
       l4_pattern <- grep(l2_latlon, gedil4_f, value=TRUE)
       gedi_l4  <- read.csv(paste(f.path,"WDPA_gedi_l4a_clean",iso3,l4_pattern, sep="/")) %>%
