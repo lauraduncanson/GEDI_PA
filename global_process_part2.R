@@ -157,7 +157,7 @@ for (this_paf in gedi_paf){
                        count=length(rh_098),meanrh98=mean(rh_098, na.rm=TRUE), sdrh98=sd(rh_098, na.rm = TRUE),medrh98=median(rh_098, na.rm = TRUE),
                        meanrh75=mean(rh_075,na.rm=TRUE), sdrh75=sd(rh_075,na.rm=TRUE), medrh75=median(rh_075,na.rm=TRUE),
                        meanrh50=mean(rh_050,na.rm=TRUE), sdrh50=sd(rh_050,na.rm=TRUE), medrh50=median(rh_050,na.rm=TRUE),
-                       meanrh10=mean(rh_025,na.rm=TRUE ), sdrh25=sd(rh_025, na.rm=TRUE),medrh25=median(rh_025, na.rm=TRUE),
+                       meanrh25=mean(rh_025,na.rm=TRUE ), sdrh25=sd(rh_025, na.rm=TRUE),medrh25=median(rh_025, na.rm=TRUE),
                        meanpai=mean(pai, na.rm=TRUE), sdpai=sd(pai, na.rm=TRUE), medpai=median(pai, na.rm=TRUE),
                        meancov=mean(cover, na.rm=TRUE), sdcov=sd(cover,na.rm=TRUE),  medcov=median(cover,na.rm=TRUE),
                        meanagbd=mean(agbd, na.rm=TRUE), sdagbd=sd(agbd, na.rm=TRUE),medagbd=median(agbd, na.rm=TRUE),
@@ -225,8 +225,14 @@ getmode <- function(v) {
   uniqv[which.max(tabulate(match(v, uniqv)))]
 }
 
-iso_sum <- d%>% 
-  tidyr::pivot_wider(names_from=status, values_from= setdiff(names(.),c("pa_id", "status"))) #writeLine to a large txt file where world pas stats are
+iso_sum <- fullds %>%
+  group_by(status) %>%  
+  dplyr::summarise(count_ttl=length(rh_098),
+                   meanrh98=mean(rh_098, na.rm=TRUE), sdrh98=sd(rh_098, na.rm = TRUE), medrh98=median(rh_098, na.rm = TRUE),msrh98=sum(is.na(rh_098)),
+                   meanpai=mean(pai, na.rm=TRUE), sdpai=sd(pai, na.rm=TRUE),  medpai=median(pai, na.rm=TRUE),mspai=sum(is.na(pai)),
+                   meancov=mean(cover, na.rm=TRUE), sdcov=sd(cover,na.rm=TRUE),  medcov=median(cover,na.rm=TRUE),mscov=sum(is.na(cov)),
+                   meanagbd=mean(agbd, na.rm=TRUE), sdagbd=sd(agbd, na.rm=TRUE), medagbd=median(agbd, na.rm=TRUE), msagbd=sum(is.na(agbd)))%>% 
+  tidyr::pivot_wider(names_from=status, values_from= setdiff(names(.),c("pa_id", "status")))#writeLine to a large txt file where world pas stats are
 iso_sum$iso3 <- iso3
 continent <- fullds$region %>% unique() %>% getmode()
 iso_sum$continent <- continent
