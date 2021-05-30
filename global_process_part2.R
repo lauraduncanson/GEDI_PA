@@ -140,41 +140,48 @@ cat(paste("Step 6: calculating per pa summary stats for", iso3,"\n"))
 #   cat("old version for", iso3,"exists, removing...\n")
 #   file.remove(paste(f.path,"WDPA_GEDI_extract3/pa_stats/",iso3,"_pa_stats_summary_wk",gediwk,".csv", sep=""))
 # }
-for (this_paf in gedi_paf){
-  pa_metrics <- readRDS(this_paf) %>% unique()
-  if (length(table(pa_metrics$status))<2) {
-    cat(iso3, this_paf, "has 0 protected or treatment \n")
-  } else if (table(pa_metrics$status)[1]!=0 && table(pa_metrics$status)[2]!=0) {
-    #filter the datafrme by number of shots in each cell, which is euivalent of the number of occurence of each unique UID code
-    tt <- table(pa_metrics$UID)
-    qcellid <- table(pa_metrics$UID)[tt>5] %>% names()
-    pa_metrics_filtered <- pa_metrics %>% dplyr::filter(UID %in% qcellid)
-    #calc summary stats for each country 
-    pa_stats_summary <- pa_metrics_filtered %>%
-      group_by(status) %>% 
-      dplyr::mutate(pa_id=as.character(pa_id)) %>%
-      dplyr::summarise(pa_id=na.omit(unique(pa_id)),
-                       count=length(rh_098),meanrh98=mean(rh_098, na.rm=TRUE), sdrh98=sd(rh_098, na.rm = TRUE),medrh98=median(rh_098, na.rm = TRUE),
-                       meanrh75=mean(rh_075,na.rm=TRUE), sdrh75=sd(rh_075,na.rm=TRUE), medrh75=median(rh_075,na.rm=TRUE),
-                       meanrh50=mean(rh_050,na.rm=TRUE), sdrh50=sd(rh_050,na.rm=TRUE), medrh50=median(rh_050,na.rm=TRUE),
-                       meanrh25=mean(rh_025,na.rm=TRUE ), sdrh25=sd(rh_025, na.rm=TRUE),medrh25=median(rh_025, na.rm=TRUE),
-                       meanpai=mean(pai, na.rm=TRUE), sdpai=sd(pai, na.rm=TRUE), medpai=median(pai, na.rm=TRUE),
-                       meancov=mean(cover, na.rm=TRUE), sdcov=sd(cover,na.rm=TRUE),  medcov=median(cover,na.rm=TRUE),
-                       meanagbd=mean(agbd, na.rm=TRUE), sdagbd=sd(agbd, na.rm=TRUE),medagbd=median(agbd, na.rm=TRUE),
-                       wwfecoreg=getmode(wwfecoreg),REGION=getmode(region))%>% 
-      tidyr::pivot_wider(names_from=status, values_from= setdiff(names(.),c("pa_id", "status"))) #writeLine to a large txt file where world pas stats are
-    pa_stats_summary$iso3 <- iso3
-    if(!file.exists(paste(f.path,"WDPA_GEDI_extract4/pa_stats/",iso3,"_pa_stats_summary_wk",gediwk,".csv", sep=""))){
-      print("not exists")
-      write.csv(pa_stats_summary, file=paste(f.path,"WDPA_GEDI_extract4/pa_stats/",iso3,"_pa_stats_summary_wk",gediwk,".csv", sep=""), row.names = FALSE)
-    } else if (file.exists(paste(f.path,"WDPA_GEDI_extract4/pa_stats/",iso3,"_pa_stats_summary_wk",gediwk,".csv", sep=""))){
-      print("exists so appending to existing file")
-      write.table(pa_stats_summary, file=paste(f.path,"WDPA_GEDI_extract4/pa_stats/",iso3,"_pa_stats_summary_wk",gediwk,".csv", sep=""),
-                  sep=",", append=TRUE , row.names=FALSE, col.names=FALSE)   #will not overwrite but append to existing files
+if (flag =="run all"){
+  if(file.exists(paste(f.path,"WDPA_GEDI_extract4/pa_stats/",iso3,"_pa_stats_summary_wk",gediwk,".csv", sep=""))){  #if flag indicates running all steps, we remove the pa_stats for the iso from previous iteration and prompt creation of a new file
+    file.remove(paste(f.path,"WDPA_GEDI_extract4/pa_stats/",iso3,"_pa_stats_summary_wk",gediwk,".csv", sep=""))
+  }
+  
+  for (this_paf in gedi_paf){
+    pa_metrics <- readRDS(this_paf) %>% unique()
+    if (length(table(pa_metrics$status))<2) {
+      cat(iso3, this_paf, "has 0 protected or treatment \n")
+    } else if (table(pa_metrics$status)[1]!=0 && table(pa_metrics$status)[2]!=0) {
+      #filter the datafrme by number of shots in each cell, which is euivalent of the number of occurence of each unique UID code
+      tt <- table(pa_metrics$UID)
+      qcellid <- table(pa_metrics$UID)[tt>5] %>% names()
+      pa_metrics_filtered <- pa_metrics %>% dplyr::filter(UID %in% qcellid)
+      #calc summary stats for each country 
+      pa_stats_summary <- pa_metrics_filtered %>%
+        group_by(status) %>% 
+        dplyr::mutate(pa_id=as.character(pa_id)) %>%
+        dplyr::summarise(pa_id=na.omit(unique(pa_id)),
+                         count=length(rh_098),meanrh98=mean(rh_098, na.rm=TRUE), sdrh98=sd(rh_098, na.rm = TRUE),medrh98=median(rh_098, na.rm = TRUE),
+                         meanrh75=mean(rh_075,na.rm=TRUE), sdrh75=sd(rh_075,na.rm=TRUE), medrh75=median(rh_075,na.rm=TRUE),
+                         meanrh50=mean(rh_050,na.rm=TRUE), sdrh50=sd(rh_050,na.rm=TRUE), medrh50=median(rh_050,na.rm=TRUE),
+                         meanrh25=mean(rh_025,na.rm=TRUE ), sdrh25=sd(rh_025, na.rm=TRUE),medrh25=median(rh_025, na.rm=TRUE),
+                         meanpai=mean(pai, na.rm=TRUE), sdpai=sd(pai, na.rm=TRUE), medpai=median(pai, na.rm=TRUE),
+                         meancov=mean(cover, na.rm=TRUE), sdcov=sd(cover,na.rm=TRUE),  medcov=median(cover,na.rm=TRUE),
+                         meanagbd=mean(agbd, na.rm=TRUE), sdagbd=sd(agbd, na.rm=TRUE),medagbd=median(agbd, na.rm=TRUE),
+                         wwfecoreg=getmode(wwfecoreg),REGION=getmode(region))%>% 
+        tidyr::pivot_wider(names_from=status, values_from= setdiff(names(.),c("pa_id", "status"))) #writeLine to a large txt file where world pas stats are
+      pa_stats_summary$iso3 <- iso3
+      if(!file.exists(paste(f.path,"WDPA_GEDI_extract4/pa_stats/",iso3,"_pa_stats_summary_wk",gediwk,".csv", sep=""))){
+        print("not exists")
+        write.csv(pa_stats_summary, file=paste(f.path,"WDPA_GEDI_extract4/pa_stats/",iso3,"_pa_stats_summary_wk",gediwk,".csv", sep=""), row.names = FALSE)
+      } else if (file.exists(paste(f.path,"WDPA_GEDI_extract4/pa_stats/",iso3,"_pa_stats_summary_wk",gediwk,".csv", sep=""))){
+        print("exists so appending to existing file")
+        write.table(pa_stats_summary, file=paste(f.path,"WDPA_GEDI_extract4/pa_stats/",iso3,"_pa_stats_summary_wk",gediwk,".csv", sep=""),
+                    sep=",", append=TRUE , row.names=FALSE, col.names=FALSE)   #will not overwrite but append to existing files
+      }
     }
   }
+  cat("Done summarizing pa-level stats for country",iso3,"\n")  
 }
-cat("Done summarizing pa-level stats for country",iso3,"\n")  
+
   
 #---------------STEP7: [Figure 4A] Removing dup gedi shots in overlapping region, count shot#/PA w/o dups, results in [extract4/iso_full_nodup]-------------------
 gedi_paf <-list.files(paste(f.path,"WDPA_GEDI_extract4/",iso3,"_wk",gediwk,sep=""), pattern=".RDS", full.names = TRUE)
@@ -241,6 +248,7 @@ write.csv(iso_sum, file=paste(f.path,"WDPA_GEDI_extract4/iso_stats/",iso3,"_coun
 cat(iso3,"country level summary stats is exported to /iso_stats/ \n")
 
 #--------------Step 9 Random Forest Modelling AGBD w/ 2020 Covars-------------------------------------------------
+cat("Step 9: RF model for AGBD", iso3,"\n ")
 gedil4_folder <- list.files(paste(f.path,"WDPA_gedi_l4a_clean/",iso3,"/",sep=""))
 registerDoParallel(cores=round(mproc*0.5))  #read l4a data, extract values from the 2020 raster stacks and merge into a large df for rf modeling
 ex_out <- foreach(this_csv=gedil4_folder, .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','raster')) %dopar% {
@@ -255,7 +263,9 @@ ex_out <- foreach(this_csv=gedil4_folder, .combine = foreach_rbind, .packages=c(
   
   iso_l4_covar <- data.frame()
   gedil4_covar_filtered <-gedil4_covar@data %>% dplyr::filter(!is.na(agbd)) %>% dplyr::filter(l4_quality_flag==1) #export only the quality filtered observations
-  gedil4_covar_filtered[gedil4_covar_filtered==-9999] <- NA
+  if(nrow(gedil4_covar_filtered)>0){
+    gedil4_covar_filtered[gedil4_covar_filtered==-9999] <- NA
+  }
   gedil4_covar_filtered <- gedil4_covar_filtered[complete.cases(gedil4_covar_filtered),]
   iso_l4_covar <- rbind(gedil4_covar_filtered,iso_l4_covar)
   
@@ -276,8 +286,9 @@ if(nrow(samp_df)<10000){
     mutate(lc2019=factor(lc2019),wwf_biomes=factor(wwf_biomes),wwf_ecoreg=factor(wwf_ecoreg))
 }
 cat("dimension of the modelling DF", nrow(samp_df),"\n")
+
 one_hot <- dummyVars(~ ., samp_df, fullRank = FALSE)
-samp_df_hot <- predict(one_hot, samp_df) %>% as.data.frame()
+samp_df_hot <- tryCatch(as.data.frame(predict(one_hot, samp_df)), error=function(e){return(samp_df)})
 names(samp_df_hot) <- make.names(names(samp_df_hot), allow_ = FALSE)
 samp_df_hot$agbd[samp_df_hot$agbd==0] <- 0.01
 rf <- ranger(
@@ -298,6 +309,7 @@ saveRDS(rf, paste(f.path,"WDPA_agbd_rf_models/","agbd_rf_model_",iso3,".RDS",sep
 
 
 #--------------Step 9b RF model for other structure metrics RH98, COVER, PAI-----------------------------------------------
+cat("Step 9b: RF model for RH98, COVER, and PAI", iso3,"\n ")
 gedil2_folder <- list.files(paste(f.path,"WDPA_gedi_l2a+l2b_clean/",iso3,"/",sep=""))
 registerDoParallel(cores=round(mproc*0.5))  #read l4a data, extract values from the 2020 raster stacks and merge into a large df for rf modeling
 ex_out <- foreach(this_csv=gedil2_folder, .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','raster')) %dopar% {
@@ -334,7 +346,7 @@ if(nrow(samp_df)<10000){
 }
 cat("dimension of the modelling DF and building RF model for RH098", nrow(samp_df),"\n")
 one_hot <- dummyVars(~ ., samp_df, fullRank = FALSE)
-samp_df_hot <- predict(one_hot, samp_df) %>% as.data.frame() %>% dplyr::select(-c(cover, pai))
+samp_df_hot <-  tryCatch(as.data.frame(predict(one_hot, samp_df)), error=function(e){return(samp_df)}) %>% dplyr::select(-c(cover, pai))
 names(samp_df_hot) <- make.names(names(samp_df_hot), allow_ = FALSE)
 rf <- ranger(
   formula         = log(rh.098) ~ ., 
@@ -355,7 +367,7 @@ saveRDS(rf, paste(f.path,"WDPA_rh98_rf_models/","rh98_rf_model_",iso3,".RDS",sep
 
 cat("dimension of the modelling DF and building RF model for Cover", nrow(samp_df),"\n")
 one_hot <- dummyVars(~ ., samp_df, fullRank = FALSE)
-samp_df_hot <- predict(one_hot, samp_df) %>% as.data.frame() %>% dplyr::select(-c(rh_098, pai)) #%>% sample_n(0.1*(nrow(.)))
+samp_df_hot <-  tryCatch(as.data.frame(predict(one_hot, samp_df)), error=function(e){return(samp_df)}) %>% dplyr::select(-c(rh_098, pai)) #%>% sample_n(0.1*(nrow(.)))
 names(samp_df_hot) <- make.names(names(samp_df_hot), allow_ = FALSE)
 rf <- ranger(
   formula         = cover ~ .,
@@ -375,7 +387,7 @@ saveRDS(rf, paste(f.path,"WDPA_cover_rf_models/","cover_rf_model_",iso3,".RDS",s
 
 cat("dimension of the modelling DF and building RF model for PAI", nrow(samp_df),"\n")
 one_hot <- dummyVars(~ ., samp_df, fullRank = FALSE)
-samp_df_hot <- predict(one_hot, samp_df) %>% as.data.frame() %>% dplyr::select(-c(cover, rh_098))
+samp_df_hot <-  tryCatch(as.data.frame(predict(one_hot, samp_df)), error=function(e){return(samp_df)}) %>% dplyr::select(-c(cover, rh_098))
 names(samp_df_hot) <- make.names(names(samp_df_hot), allow_ = FALSE)
 rf <- ranger(
   formula         = pai ~ .,
