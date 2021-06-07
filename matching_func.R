@@ -356,52 +356,68 @@ getmode <- function(v,na.rm) {
 }
 
 extract_gedi <- function(matched, mras){
-  lon_bond <- range(matched$lon,na.rm=TRUE)
-  lat_bond <- range(matched$lat,na.rm=TRUE)
-  all_gedil2_f <- list.files(file.path(f.path,"WDPA_gedi_l2a+l2b_clean2",iso3), full.names = FALSE) 
-  all_gedil4_f <- list.files(file.path(f.path,"WDPA_gedi_l4a_clean",iso3), full.names = FALSE) 
-  gedil2_f <- all_gedil2_f%>% strsplit( "_") %>% 
-    as.data.frame() %>% 
-    t() %>% as.data.frame(row.names =all_gedil2_f, stringsAsFactors=FALSE,make.names=FALSE) %>% dplyr::select(V3,V4) %>% 
-    mutate(lons=as.numeric(gsub('\\D','', V3)), ew= gsub('\\d','', V3) ) %>% 
-    mutate(lats= as.numeric(gsub('\\D','', V4)), ns= gsub('\\d','', V4) ) %>% 
-    mutate( lons = ifelse(ew!="E", -1*lons, lons)) %>% 
-    mutate( lats = ifelse(ns!="N", -1*lats, lats)) %>% 
-    dplyr::filter( between(lons, floor(lon_bond[1]), ceiling(lon_bond[2]))) %>% 
-    dplyr::filter(between(lats, floor(lat_bond[1]), ceiling(lat_bond[2]))) %>% rownames()
-  gedil4_f <- all_gedil4_f%>% strsplit( "_") %>% 
-    as.data.frame() %>% 
-    t() %>% as.data.frame(row.names =all_gedil4_f, stringsAsFactors=FALSE,make.names=FALSE) %>% dplyr::select(V3,V4) %>% 
-    mutate(lons=as.numeric(gsub('\\D','', V3)), ew= gsub('\\d','', V3) ) %>% 
-    mutate(lats= as.numeric(gsub('\\D','', V4)), ns= gsub('\\d','', V4) ) %>% 
-    mutate( lons = ifelse(ew!="E", -1*lons, lons)) %>% 
-    mutate( lats = ifelse(ns!="N", -1*lats, lats)) %>% 
-    dplyr::filter( between(lons, floor(lon_bond[1]), ceiling(lon_bond[2]))) %>% 
-    dplyr::filter(between(lats, floor(lat_bond[1]), ceiling(lat_bond[2]))) %>% rownames()  #should result in same # of files as the l2 products
-  
-  registerDoParallel(cores=round(mproc*0.5))
-  ex_out <- foreach(this_csvid=seq(length(gedil2_f)), .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','raster')) %dopar% {
-      ##add the GEDI l4a model prediction for AGB here :
-      cat("Readng in no. ", this_csvid,"csv of ", length(gedil2_f),"csvs for iso3",iso3,"\n")
-      gedi_l2  <- read.csv(paste(f.path,"WDPA_gedi_l2a+l2b_clean2",iso3,gedil2_f[this_csvid], sep="/")) %>%
-        dplyr::select(shot_number,lon_lowestmode, lat_lowestmode,rh_025, rh_050, rh_075, rh_098,cover, pai)
-      l2_latlon <- gedil2_f[this_csvid] %>%  str_split("_") %>% unlist %>% .[3:4] %>% paste(sep="_", collapse ="_")
-      l4_pattern <- grep(l2_latlon, gedil4_f, value=TRUE)
-      gedi_l4  <- read.csv(paste(f.path,"WDPA_gedi_l4a_clean",iso3,l4_pattern, sep="/")) %>%
-        dplyr::select(shot_number, agbd, agbd_se, agbd_t, agbd_t_se)
-      gedi_l24 <- inner_join(gedi_l2, gedi_l4, by="shot_number")
+    lon_bond <- range(matched$lon,na.rm=TRUE)
+    lat_bond <- range(matched$lat,na.rm=TRUE)
+    all_gedil2_f <- list.files(file.path(f.path,"WDPA_gedi_l2a+l2b_clean2",iso3), full.names = FALSE) 
+    all_gedil4_f <- list.files(file.path(f.path,"WDPA_gedi_l4a_clean",iso3), full.names = FALSE) 
+    gedil2_f <- all_gedil2_f%>% strsplit( "_") %>% 
+      as.data.frame() %>% 
+      t() %>% as.data.frame(row.names =all_gedil2_f, stringsAsFactors=FALSE,make.names=FALSE) %>% dplyr::select(V3,V4) %>% 
+      mutate(lons=as.numeric(gsub('\\D','', V3)), ew= gsub('\\d','', V3) ) %>% 
+      mutate(lats= as.numeric(gsub('\\D','', V4)), ns= gsub('\\d','', V4) ) %>% 
+      mutate( lons = ifelse(ew!="E", -1*lons, lons)) %>% 
+      mutate( lats = ifelse(ns!="N", -1*lats, lats)) %>% 
+      dplyr::filter( between(lons, floor(lon_bond[1]), ceiling(lon_bond[2]))) %>% 
+      dplyr::filter(between(lats, floor(lat_bond[1]), ceiling(lat_bond[2]))) %>% rownames()
+    gedil4_f <- all_gedil4_f%>% strsplit( "_") %>% 
+      as.data.frame() %>% 
+      t() %>% as.data.frame(row.names =all_gedil4_f, stringsAsFactors=FALSE,make.names=FALSE) %>% dplyr::select(V3,V4) %>% 
+      mutate(lons=as.numeric(gsub('\\D','', V3)), ew= gsub('\\d','', V3) ) %>% 
+      mutate(lats= as.numeric(gsub('\\D','', V4)), ns= gsub('\\d','', V4) ) %>% 
+      mutate( lons = ifelse(ew!="E", -1*lons, lons)) %>% 
+      mutate( lats = ifelse(ns!="N", -1*lats, lats)) %>% 
+      dplyr::filter( between(lons, floor(lon_bond[1]), ceiling(lon_bond[2]))) %>% 
+      dplyr::filter(between(lats, floor(lat_bond[1]), ceiling(lat_bond[2]))) %>% rownames()  #should result in same # of files as the l2 products
+    
+    registerDoParallel(cores=round(mproc*0.5))
+    ex_out <- foreach(this_csvid=seq(length(gedil2_f)), .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','raster')) %dopar% {
+        ##add the GEDI l4a model prediction for AGB here :
+        cat("Readng in no. ", this_csvid,"csv of ", length(gedil2_f),"csvs for iso3",iso3,"\n")
+        gedi_l2  <- read.csv(paste(f.path,"WDPA_gedi_l2a+l2b_clean2",iso3,gedil2_f[this_csvid], sep="/")) %>%
+          dplyr::select(shot_number,lon_lowestmode, lat_lowestmode,rh_025, rh_050, rh_075, rh_098,cover, pai)
+        l2_latlon <- gedil2_f[this_csvid] %>%  str_split("_") %>% unlist %>% .[3:4] %>% paste(sep="_", collapse ="_") %>% paste("_",.,sep="")
+        l4_pattern <- tryCatch(grep(l2_latlon, gedil4_f, value=TRUE), error=function(cond){return(NA)})
+        gedi_l4  <- tryCatch(read.csv(paste(f.path,"WDPA_gedi_l4a_clean",iso3,l4_pattern, sep="/")), error=function(cond){return(NA)})
+                            
+        if (is.na(gedi_l4) || nrow(gedi_l4) < 1){
+          cat("error")
+          gedi_l24 <- gedi_l2
+          gedi_l24$agbd <- NA
+          gedi_l24$agbd_se <- NA
+          gedi_l24$agbd_t <- NA
+          gedi_l24$agbd_t_se <- NA
+        } else {
+          gedi_l4_sub <- gedi_l4 %>%
+            dplyr::select(shot_number, agbd, agbd_se, agbd_t, agbd_t_se)
+          gedi_l24 <- inner_join(gedi_l2, gedi_l4_sub, by="shot_number")
+        
+        }
       # gedi_l24[rowSums(is.na(gedi_l24)) > 0, ]   
       # gedi_l24 <- left_join(gedi_l2, gedi_l4, by="shot_number") %>% drop_na()
-      gedi_l24_sp <- gedi_l24 %>% 
-        SpatialPointsDataFrame(coords=.[,c("lon_lowestmode","lat_lowestmode")],
-                               proj4string=CRS("+init=epsg:4326"), data=.) %>%spTransform(., CRS("+init=epsg:6933"))
       iso_matched_gedi_df <- data.frame()
-      matched_gedi <- raster::extract(mras,gedi_l24_sp, df=TRUE)
-      matched_gedi_metrics <- cbind(matched_gedi,gedi_l24_sp@data)
-      matched_gedi_metrics_filtered <- matched_gedi_metrics %>% dplyr::filter(!is.na(status)) %>% 
-        convertFactor(matched0 = matched,exgedi = .) 
+      if(nrow(gedi_l24)>0){
+        gedi_l24_sp <- gedi_l24 %>% 
+          SpatialPointsDataFrame(coords=.[,c("lon_lowestmode","lat_lowestmode")],
+                                 proj4string=CRS("+init=epsg:4326"), data=.) %>%spTransform(., CRS("+init=epsg:6933"))
         
-      iso_matched_gedi_df <- rbind(matched_gedi_metrics_filtered,iso_matched_gedi_df)
+        matched_gedi <- raster::extract(mras,gedi_l24_sp, df=TRUE)
+        matched_gedi_metrics <- cbind(matched_gedi,gedi_l24_sp@data)
+        matched_gedi_metrics_filtered <- matched_gedi_metrics %>% dplyr::filter(!is.na(status)) %>% 
+          convertFactor(matched0 = matched,exgedi = .) 
+        
+        iso_matched_gedi_df <- rbind(matched_gedi_metrics_filtered,iso_matched_gedi_df)
+        
+      }
       return(iso_matched_gedi_df)
   }
   stopImplicitCluster()
@@ -425,7 +441,7 @@ SplitRas <- function(raster,ppside){
 }
 
 rasExtract2020 <- function(l4_sp){
-  cat(iso3,"converting the matched csv to a raster stack for extraction\n")
+  # cat(iso3,"converting the matched csv to a raster stack for extraction\n")
   tif2020 <- c("pop_cnt_2020","pop_den_2020","lc2019","tt2cities_2015","wc_prec_2010-2018","wc_tavg_2010-2018","wc_tmax_2010-2018",
                "wc_tmin_2010-2018","wwf_biomes","wwf_ecoreg","dem","slope","d2roads","dcities")
   for (t in 1:length(tif2020)){
