@@ -146,7 +146,8 @@ if (flag =="run all"){
   }
   
   for (this_paf in gedi_paf){
-    pa_metrics <- readRDS(this_paf) %>% unique()
+    cat(this_paf,"\n")
+    pa_metrics <-tryCatch(unique(readRDS(this_paf)), error=function(cond){return(NULL)})
     if (length(table(pa_metrics$status))<2) {
       cat(iso3, this_paf, "has 0 protected or treatment \n")
     } else if (table(pa_metrics$status)[1]!=0 && table(pa_metrics$status)[2]!=0) {
@@ -155,27 +156,29 @@ if (flag =="run all"){
       qcellid <- table(pa_metrics$UID)[tt>5] %>% names()
       pa_metrics_filtered <- pa_metrics %>% dplyr::filter(UID %in% qcellid)
       #calc summary stats for each country 
-      pa_stats_summary <- pa_metrics_filtered %>%
-        group_by(status) %>% 
-        dplyr::mutate(pa_id=as.character(pa_id)) %>%
-        dplyr::summarise(pa_id=na.omit(unique(pa_id)),
-                         count=length(rh_098),meanrh98=mean(rh_098, na.rm=TRUE), sdrh98=sd(rh_098, na.rm = TRUE),medrh98=median(rh_098, na.rm = TRUE),
-                         meanrh75=mean(rh_075,na.rm=TRUE), sdrh75=sd(rh_075,na.rm=TRUE), medrh75=median(rh_075,na.rm=TRUE),
-                         meanrh50=mean(rh_050,na.rm=TRUE), sdrh50=sd(rh_050,na.rm=TRUE), medrh50=median(rh_050,na.rm=TRUE),
-                         meanrh25=mean(rh_025,na.rm=TRUE ), sdrh25=sd(rh_025, na.rm=TRUE),medrh25=median(rh_025, na.rm=TRUE),
-                         meanpai=mean(pai, na.rm=TRUE), sdpai=sd(pai, na.rm=TRUE), medpai=median(pai, na.rm=TRUE),
-                         meancov=mean(cover, na.rm=TRUE), sdcov=sd(cover,na.rm=TRUE),  medcov=median(cover,na.rm=TRUE),
-                         meanagbd=mean(agbd, na.rm=TRUE), sdagbd=sd(agbd, na.rm=TRUE),medagbd=median(agbd, na.rm=TRUE),
-                         wwfecoreg=getmode(wwfecoreg),REGION=getmode(region))%>% 
-        tidyr::pivot_wider(names_from=status, values_from= setdiff(names(.),c("pa_id", "status"))) #writeLine to a large txt file where world pas stats are
-      pa_stats_summary$iso3 <- iso3
-      if(!file.exists(paste(f.path,"WDPA_GEDI_extract4/pa_stats/",iso3,"_pa_stats_summary_wk",gediwk,".csv", sep=""))){
-        print("not exists")
-        write.csv(pa_stats_summary, file=paste(f.path,"WDPA_GEDI_extract4/pa_stats/",iso3,"_pa_stats_summary_wk",gediwk,".csv", sep=""), row.names = FALSE)
-      } else if (file.exists(paste(f.path,"WDPA_GEDI_extract4/pa_stats/",iso3,"_pa_stats_summary_wk",gediwk,".csv", sep=""))){
-        print("exists so appending to existing file")
-        write.table(pa_stats_summary, file=paste(f.path,"WDPA_GEDI_extract4/pa_stats/",iso3,"_pa_stats_summary_wk",gediwk,".csv", sep=""),
-                    sep=",", append=TRUE , row.names=FALSE, col.names=FALSE)   #will not overwrite but append to existing files
+      if(nrow(pa_metrics_filtered)>0){
+        pa_stats_summary <- pa_metrics_filtered %>%
+          group_by(status) %>% 
+          dplyr::mutate(pa_id=as.character(pa_id)) %>%
+          dplyr::summarise(pa_id=na.omit(unique(pa_id)),
+                           count=length(rh_098),meanrh98=mean(rh_098, na.rm=TRUE), sdrh98=sd(rh_098, na.rm = TRUE),medrh98=median(rh_098, na.rm = TRUE),
+                           meanrh75=mean(rh_075,na.rm=TRUE), sdrh75=sd(rh_075,na.rm=TRUE), medrh75=median(rh_075,na.rm=TRUE),
+                           meanrh50=mean(rh_050,na.rm=TRUE), sdrh50=sd(rh_050,na.rm=TRUE), medrh50=median(rh_050,na.rm=TRUE),
+                           meanrh25=mean(rh_025,na.rm=TRUE ), sdrh25=sd(rh_025, na.rm=TRUE),medrh25=median(rh_025, na.rm=TRUE),
+                           meanpai=mean(pai, na.rm=TRUE), sdpai=sd(pai, na.rm=TRUE), medpai=median(pai, na.rm=TRUE),
+                           meancov=mean(cover, na.rm=TRUE), sdcov=sd(cover,na.rm=TRUE),  medcov=median(cover,na.rm=TRUE),
+                           meanagbd=mean(agbd, na.rm=TRUE), sdagbd=sd(agbd, na.rm=TRUE),medagbd=median(agbd, na.rm=TRUE),
+                           wwfecoreg=getmode(wwfecoreg),REGION=getmode(region))%>% 
+          tidyr::pivot_wider(names_from=status, values_from= setdiff(names(.),c("pa_id", "status"))) #writeLine to a large txt file where world pas stats are
+        pa_stats_summary$iso3 <- iso3
+        if(!file.exists(paste(f.path,"WDPA_GEDI_extract4/pa_stats/",iso3,"_pa_stats_summary_wk",gediwk,".csv", sep=""))){
+          print("not exists")
+          write.csv(pa_stats_summary, file=paste(f.path,"WDPA_GEDI_extract4/pa_stats/",iso3,"_pa_stats_summary_wk",gediwk,".csv", sep=""), row.names = FALSE)
+        } else if (file.exists(paste(f.path,"WDPA_GEDI_extract4/pa_stats/",iso3,"_pa_stats_summary_wk",gediwk,".csv", sep=""))){
+          print("exists so appending to existing file")
+          write.table(pa_stats_summary, file=paste(f.path,"WDPA_GEDI_extract4/pa_stats/",iso3,"_pa_stats_summary_wk",gediwk,".csv", sep=""),
+                      sep=",", append=TRUE , row.names=FALSE, col.names=FALSE)   #will not overwrite but append to existing files
+        } 
       }
     }
   }
@@ -189,15 +192,22 @@ fullds <- data.frame()
 cat ("Step7a: Compiling country wide dataframe for",iso3, "and removing duplicates...\n")
 for (c in gedi_paf){  #removing dups based on shot#
   print(c)
-  tmpds <- readRDS(c)
-  tmpds$shot_number=as.character(tmpds$shot_number)
-  tt <- table(tmpds$UID)
-  qcellid <- table(tmpds$UID)[tt>5] %>% names()
-  tmpds_filtered <- tmpds %>% dplyr::filter(UID %in% qcellid)
-  fullds <- rbind(fullds, tmpds_filtered)
-  print(dim(fullds))
-  fullds <- fullds[!duplicated(fullds$shot_number), ]
-  print(dim(fullds))
+  tmpds <- tryCatch(readRDS(c),error=function(cond){return(NULL)})
+  if(!is.null(tmpds)){
+    tmpds$shot_number=as.character(tmpds$shot_number)
+    tt <- table(tmpds$UID)
+    qcellid <- table(tmpds$UID)[tt>5] %>% names()
+    tmpds_filtered <- tmpds %>% dplyr::filter(UID %in% qcellid)
+    fullds <- rbind(fullds, tmpds_filtered)
+    print(dim(fullds))
+    fullds <- fullds[!duplicated(fullds$shot_number), ]
+    print(dim(fullds))
+  } else {
+    fullds <- fullds
+    print(dim(fullds))
+    
+  }
+  
 }
 fullds$iso3 <- iso3
 write.csv(fullds, file=paste(f.path,"WDPA_GEDI_extract4/iso_full_nodup/",iso3,"_country_full_nodup_wk",gediwk,".csv", sep=""), row.names = F)
@@ -249,37 +259,43 @@ cat(iso3,"country level summary stats is exported to /iso_stats/ \n")
 
 #--------------Step 9 Random Forest Modelling AGBD w/ 2020 Covars-------------------------------------------------
 cat("Step 9: RF model for AGBD", iso3,"\n ")
+cat("Filtering l4a files...\n")
 gedil4_folder <- list.files(paste(f.path,"WDPA_gedi_l4a_clean/",iso3,"/",sep=""))
+
+cat("Compiling and sampling l4a dataset...\n")
 registerDoParallel(cores=round(mproc*0.5))  #read l4a data, extract values from the 2020 raster stacks and merge into a large df for rf modeling
 ex_out <- foreach(this_csv=gedil4_folder, .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','raster')) %dopar% {
   ##add the GEDI l4a model prediction for AGB here :
-  cat("Readng in no. ", this_csv,"csv of ", length(gedil4_folder),"csvs for iso3",iso3,"\n")
-  gedi_l4  <- read.csv(paste(f.path,"WDPA_gedi_l4a_clean/",iso3,"/",this_csv, sep="/")) %>%
-    dplyr::select(shot_number, agbd, agbd_se, lat_lowestmode, lon_lowestmode, l4_quality_flag)
-  gedi_l4_sp <- gedi_l4 %>% 
-    SpatialPointsDataFrame(coords=.[,c("lon_lowestmode","lat_lowestmode")],
-                           proj4string=CRS("+init=epsg:4326"), data=.) #%>%spTransform(., CRS("+init=epsg:6933"))
-  gedil4_covar <- rasExtract2020(gedi_l4_sp)
-  
+  cat("Step 9a: Readng in no. ", match(this_csv, gedil4_folder),"csv of ", length(gedil4_folder),"csvs for iso3",iso3,"\n")
   iso_l4_covar <- data.frame()
-  gedil4_covar_filtered <-gedil4_covar@data %>% dplyr::filter(!is.na(agbd)) %>% dplyr::filter(l4_quality_flag==1) #export only the quality filtered observations
-  if(nrow(gedil4_covar_filtered)>0){
-    gedil4_covar_filtered[gedil4_covar_filtered==-9999] <- NA
+  gedi_l4  <- read.csv(paste(f.path,"WDPA_gedi_l4a_clean/",iso3,"/",this_csv, sep="/")) %>% 
+                  dplyr::select(shot_number, agbd, agbd_se, lat_lowestmode, lon_lowestmode, l4_quality_flag)
+  gedi_l4_samp <- tryCatch(sample_n(gedi_l4,ceiling(0.1*nrow(gedi_l4))), error=function(cond){return (gedi_l4)})
+  gedi_l4_sp <- tryCatch(SpatialPointsDataFrame(coords=gedi_l4_samp[,c("lon_lowestmode","lat_lowestmode")],
+                           proj4string=CRS("+init=epsg:4326"), data=gedi_l4_samp), error=function(cond){return (NULL)}) #%>%spTransform(., CRS("+init=epsg:6933"))
+  if(!is.null(gedi_l4_sp)){
+    gedil4_covar <- rasExtract2020(gedi_l4_sp)
+    gedil4_covar_filtered <-gedil4_covar@data %>% dplyr::filter(!is.na(agbd)) %>% dplyr::filter(l4_quality_flag==1) #export only the quality filtered observations
+    if(nrow(gedil4_covar_filtered)>0){
+      gedil4_covar_filtered[gedil4_covar_filtered==-9999] <- NA
+    }
+    gedil4_covar_filtered <- gedil4_covar_filtered[complete.cases(gedil4_covar_filtered),]
+    iso_l4_covar <- rbind(gedil4_covar_filtered,iso_l4_covar)
+  } else{
+    cat("empty file\n")
   }
-  gedil4_covar_filtered <- gedil4_covar_filtered[complete.cases(gedil4_covar_filtered),]
-  iso_l4_covar <- rbind(gedil4_covar_filtered,iso_l4_covar)
-  
   return(iso_l4_covar)
 }
 stopImplicitCluster()
 
 #after extracting predictor variables from the 2020 raster stack, run rf model with at least 10,000 observations
+cat("Developing RF model for AGBD...\n")
 set.seed(1234)
 samp_df <-ex_out %>% 
   dplyr::select(-c( agbd_se, lat_lowestmode, lon_lowestmode, l4_quality_flag, shot_number))%>% 
   dplyr::sample_n(0.05*(nrow(.))) %>% 
   mutate(lc2019=factor(lc2019),wwf_biomes=factor(wwf_biomes),wwf_ecoreg=factor(wwf_ecoreg))
-if(nrow(samp_df)<10000){
+if(nrow(samp_df)>10000){
   samp_df <-ex_out %>% 
     dplyr::select(-c(agbd_se, lat_lowestmode, lon_lowestmode, l4_quality_flag, shot_number))%>% 
     dplyr::sample_n(10000) %>% 
@@ -310,24 +326,30 @@ saveRDS(rf, paste(f.path,"WDPA_agbd_rf_models/","agbd_rf_model_",iso3,".RDS",sep
 
 #--------------Step 9b RF model for other structure metrics RH98, COVER, PAI-----------------------------------------------
 cat("Step 9b: RF model for RH98, COVER, and PAI", iso3,"\n ")
-gedil2_folder <- list.files(paste(f.path,"WDPA_gedi_l2a+l2b_clean/",iso3,"/",sep=""))
+gedil2_folder <- list.files(paste(f.path,"WDPA_gedi_l2a+l2b_clean2/",iso3,"/",sep=""))
+
 registerDoParallel(cores=round(mproc*0.5))  #read l4a data, extract values from the 2020 raster stacks and merge into a large df for rf modeling
+set.seed(1234)
 ex_out <- foreach(this_csv=gedil2_folder, .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','raster')) %dopar% {
   ##add the GEDI l4a model prediction for AGB here :
-  cat("Readng in no. ", this_csv,"csv of ", length(gedil2_folder),"csvs for iso3",iso3,"\n")
-  gedi_l2  <- read.csv(paste(f.path,"WDPA_gedi_l2a+l2b_clean/",iso3,"/",this_csv, sep="/")) %>%
-    dplyr::select(shot_number, rh_098, cover, pai, lat_lowestmode, lon_lowestmode)
-  gedi_l2_sp <- gedi_l2 %>% 
-    SpatialPointsDataFrame(coords=.[,c("lon_lowestmode","lat_lowestmode")],
-                           proj4string=CRS("+init=epsg:4326"), data=.) #%>%spTransform(., CRS("+init=epsg:6933"))
-  gedil2_covar <- rasExtract2020(gedi_l2_sp)
-  
+  cat("Step 9b: Readng in no. ", match(this_csv, gedil2_folder),"csv of ", length(gedil2_folder),"csvs for iso3",iso3,"\n")
   iso_l2_covar <- data.frame()
-  gedil2_covar_filtered <-gedil2_covar@data #%>% dplyr::filter(!is.na(agbd)) #export only the quality filtered observations
-  gedil2_covar_filtered[gedil2_covar_filtered==-9999]=NA
-  gedil2_covar_filtered <- gedil2_covar_filtered[complete.cases(gedil2_covar_filtered),]
-  iso_l2_covar <- rbind(gedil2_covar_filtered,iso_l2_covar)
-  
+  gedi_l2  <- read.csv(paste(f.path,"WDPA_gedi_l2a+l2b_clean2/",iso3,"/",this_csv, sep="/")) %>%
+    dplyr::select(shot_number, rh_098, cover, pai, lat_lowestmode, lon_lowestmode)
+  gedi_l2_samp <- tryCatch(sample_n(gedi_l2,ceiling(0.1*nrow(gedi_l2))), error=function(cond){return (gedi_l2)})
+  gedi_l2_sp <- tryCatch(SpatialPointsDataFrame(coords=gedi_l2_samp[,c("lon_lowestmode","lat_lowestmode")],
+                                                proj4string=CRS("+init=epsg:4326"), data=gedi_l2_samp), error=function(cond){return (NULL)}) #%>%spTransform(., CRS("+init=epsg:6933"))
+  if(!is.null(gedi_l2_sp)){
+    gedil2_covar <- rasExtract2020(gedi_l2_sp)
+    gedil2_covar_filtered <-gedil2_covar@data #export only the quality filtered observations
+    if(nrow(gedil2_covar_filtered)>0){
+      gedil2_covar_filtered[gedil2_covar_filtered==-9999] <- NA
+    }
+    gedil2_covar_filtered <- gedil2_covar_filtered[complete.cases(gedil2_covar_filtered),]
+    iso_l2_covar <- rbind(gedil2_covar_filtered,iso_l2_covar)
+  } else{
+    cat("empty file\n")
+  }
   return(iso_l2_covar)
 }
 stopImplicitCluster()
@@ -336,9 +358,9 @@ stopImplicitCluster()
 set.seed(1234)
 samp_df <-ex_out %>% 
   dplyr::select(-c( lat_lowestmode, lon_lowestmode, shot_number))%>% 
-  dplyr::sample_n(0.01*(nrow(.))) %>% 
+  dplyr::sample_n(0.05*(nrow(.))) %>% 
   mutate(lc2019=factor(lc2019),wwf_biomes=factor(wwf_biomes),wwf_ecoreg=factor(wwf_ecoreg))
-if(nrow(samp_df)<10000){
+if(nrow(samp_df)>10000){
   samp_df <-ex_out %>% 
     dplyr::select(-c( lat_lowestmode, lon_lowestmode, shot_number))%>% 
     dplyr::sample_n(10000) %>% 
@@ -404,6 +426,8 @@ model_params <- data.frame(iso3=iso3, response_var=response_var,nsample=nrow(sam
                            var1=varImportance[1],var2=varImportance[2], var3=varImportance[3], var4=varImportance[4], var5=varImportance[5])
 write.csv(model_params,paste(f.path,"WDPA_pai_rf_models/","model_params/","model_params_",iso3,".csv",sep=""))
 saveRDS(rf, paste(f.path,"WDPA_pai_rf_models/","pai_rf_model_",iso3,".RDS",sep=""))
+
+cat("Done processing step 9\n")
 
 #---------------[NOT NEEDED FOR NOW] STEP9: Calculate per biome summary stats, 1 biome per row, removing dup gedi shots in overlapping region------------------------
 # gedi_paf <-list.files(paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,sep=""), pattern=".RDS", full.names = FALSE)
