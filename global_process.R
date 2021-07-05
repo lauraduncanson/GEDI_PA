@@ -266,14 +266,53 @@ if(!dir.exists(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",sep="
     readr::parse_number() %>% unique()
   d_PAs<- list.files(paste(f.path,"WDPA_matching_points/",iso3,"/",iso3,"_testPAs/", sep=""), pattern=paste("wk",gediwk,sep=""), full.names=FALSE)
   d_PA_id <- d_PAs %>% readr::parse_number()
-  runPA_id <- d_PA_id[!(d_PA_id %in% matched_PAid)]
+  runPA_id1 <- d_PA_id[!(d_PA_id %in% matched_PAid)]
+  
+  matched_all <- list.files(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,sep=""), pattern=".RDS", full.names = FALSE)
+  registerDoParallel(3)
+  matched_PAs <- foreach(this_rds=matched_all, .combine = c, .packages=c('sp','magrittr', 'dplyr','tidyr','raster')) %dopar% {   #non-NA matched results
+    matched_PAs=c()
+    # print(this_rds)
+    if(nchar(iso3)>3){
+      id_pa <- this_rds %>% str_split("_") %>% unlist %>% .[4]  
+    } else {
+      id_pa <- this_rds %>% str_split("_") %>% unlist %>% .[3]
+    }
+    matched <- readRDS(paste(f.path,"WDPA_matching_results/",iso3,"_wk",gediwk,"/",iso3,"_pa_", id_pa,"_matching_results_wk",gediwk,".RDS", sep=""))
+    if(!is.null(matched)){
+      if(nrow(matched)!=0){
+        matched_PAs=c(matched_PAs,this_rds) 
+      }
+    }else {
+      # print(this_rds)
+      matched_PAs=matched_PAs
+    }
+    return(matched_PAs)
+  }
+  stopImplicitCluster()
+  
+  if(!is.null(matched_PAs)){
+    fullmatch_ids <- matched_PAs %>% readr::parse_number()
+    runPA_id2 <- d_PA_id[!(d_PA_id %in% fullmatch_ids)]
+    runPA_id <- c(runPA_id1,runPA_id2)
+    
+  } else{
+    fullmatch_ids <- d_PAs %>% readr::parse_number()
+    runPA_id2 <- fullmatch_ids#d_PA_id[!(d_PA_id %in% fullmatch_ids)]
+    runPA_id <- c(runPA_id1,runPA_id2)
+    
+  }
+  
   if (length(runPA_id)>0){
-    Pattern2 <-  paste(runPA_id, collapse="|")
-    runPA <-  d_PAs[grepl(Pattern2,d_PAs)]
+    # Pattern2 <-  paste(runPA_id, collapse="|")
+    t <- d_PA_id %in% runPA_id
+    runPA <-  d_PAs[t]
     d_PAs <- runPA
   } else {
     d_PAs <- NULL
   }
+  write.csv(d_PAs, paste(f.path,"WDPA_extract4_residual_PAs/", iso3, "_wk_", gediwk, "_null_matches_rerun.csv",sep=""))
+  cat("Step 4: need to rerun ", length(d_PAs),"PAs\n")
 }
 
 registerDoParallel(mproc)
@@ -294,17 +333,18 @@ foreach(this_pa=d_PAs,.combine = foreach_rbind, .packages=c('sp','magrittr', 'dp
   n_control <- dim(d_control_all)[1]
   # ids_all <- d_control_all$UID   #seq(1,n_control)
   ids_all0 <- tryCatch(d_control_all$UID, error=function(e) return(NA))
+  ids_all <- d_control_all$UID
   set.seed(125)
   # cat("Using number of cores:",getDoParWorkers(),"\n")
   N <- ceiling(nrow(d_wocat_all)/300)
   l <- tryCatch(split(d_wocat_all, sample(1:N, nrow(d_wocat_all), replace=TRUE)),error=function(e) return(NULL))
   # l <- tryCatch(split(d_wocat_all, (as.numeric(rownames(d_wocat_all))-1) %/% 300),error=function(e) return(0))
   
-  if (length(l)<50 && length(l)>0 ){
+  if (length(l)<900 && length(l)>0 ){
     pa_match <- data.frame()
     for (pa_c in 1:length(l)){
       ids_all <- d_control_all$UID
-      cat("chunk",pa_c,"of PA", id_pa,"\n")
+      cat("chunk",pa_c,"out of ",length(l), "chunks of PA", id_pa,"\n")
       
       d_wocat_chunk <- l[[pa_c]]
       # #sample the control dataset to the size of the sample dataset, keep unsampled ids to iterate until full number of matches found
@@ -359,11 +399,11 @@ foreach(this_pa=d_PAs,.combine = foreach_rbind, .packages=c('sp','magrittr', 'dp
       cat(table(match_score$status),"\n")
       pa_match <- rbind(pa_match,match_score)
     }
-  } else if (length(l)>=50){
-    registerDoParallel(3)
-    pa_match <- foreach(pa_c=length(l), .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','optmatch','doParallel'))%dopar%{
+  } else if (length(l)>=900){
+    registerDoParallel(4)
+    pa_match <- foreach(pa_c=1:length(l), .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','optmatch','doParallel'))%dopar%{
       # cat("Matching treatment chunk", pa_c, "out of", length(l), "for PA", id_pa,"\n")
-      # cat("chunk",pa_c,"\n")
+      cat("chunk",pa_c,"out of ",length(l), "chunks of PA", id_pa,"\n")
       # cat("head control",head(ids_all0),"\n")
       d_wocat_chunk <- l[[pa_c]]
       # #sample the control dataset to the size of the sample dataset, keep unsampled ids to iterate until full number of matches found
@@ -379,14 +419,14 @@ foreach(this_pa=d_PAs,.combine = foreach_rbind, .packages=c('sp','magrittr', 'dp
         while(n_matches < n_treatment){
           
           n_ids <- length(ids_all0)
-          cat("n ids",n_ids,"\n")
+          # cat("n ids",n_ids,"\n")
           if(n_ids > n_sample){
             set.seed(125)
             sample_ids_bar <- sample(ids_all, n_sample)
             sample_ids <- sample(ids_all0, n_sample)
             d_control_sample <- d_control_all[d_control_all$UID %in% sample_ids,]
-            ids_all <-setdiff(ids_all, sample_ids_bar)    #ids_all[-sample_ids]
-            cat("protected uid", head(d_wocat_chunk$UID),"\n")
+            ids_all <-setdiff(ids_all, sample_ids)    #ids_all[-sample_ids]
+            # cat("protected uid", head(d_wocat_chunk$UID),"\n")
             # All approaches
             new_d <- tryCatch(rbind(d_wocat_chunk,d_control_sample),error=function(e) return(NULL))
             # new_d <- tryCatch(rbind(d_wocat_chunk,d_control_all),error=function(e) return(NULL))
@@ -411,7 +451,7 @@ foreach(this_pa=d_PAs,.combine = foreach_rbind, .packages=c('sp','magrittr', 'dp
               # 
             } 
             ids_all0 <-setdiff(ids_all0, matched_control$UID)
-            cat( "n control", length(ids_all0),"\n")
+            # cat( "n control", length(ids_all0),"\n")
             
             # else {
             #   n_treatment <- 0  #if not macthes are found in this sampling
@@ -420,7 +460,7 @@ foreach(this_pa=d_PAs,.combine = foreach_rbind, .packages=c('sp','magrittr', 'dp
         }, error=function(e) return(NULL))
       # ids_all0 <-setdiff(ids_all0, matched_control$UID)
       match_score <- m_all2_out
-      cat(table(match_score$status),"\n")
+      # cat(table(match_score$status),"\n")
       return(match_score)
     }
     stopImplicitCluster()
