@@ -275,197 +275,197 @@ iso_sum$continent <- continent
 write.csv(iso_sum, file=paste(f.path,"WDPA_GEDI_extract4/iso_stats/",iso3,"_country_stats_summary_wk",gediwk,"2.csv", sep=""), row.names = F)
 cat(iso3,"country level summary stats is exported to /iso_stats/ \n")
 
-#---------------STEP9: Random Forest Modelling AGBD w/ 2020 Covars-------------------------------------------------
-cat("Step 9: RF model for AGBD", iso3,"\n ")
-cat("Filtering l4a files...\n")
-if(nchar(iso3)>3){
-  iso3_sub <- iso3 %>% str_split("_") %>% unlist %>% .[1]
-  gedil4_folder <- list.files(paste(f.path,"WDPA_gedi_l4a_clean/",iso3_sub,"/",sep=""))
-} else {
-  gedil4_folder <- list.files(paste(f.path,"WDPA_gedi_l4a_clean/",iso3,"/",sep=""))
-}
-
-cat("Compiling and sampling l4a dataset...\n")
-registerDoParallel(cores=round(mproc*0.5))  #read l4a data, extract values from the 2020 raster stacks and merge into a large df for rf modeling
-ex_out <- foreach(this_csv=gedil4_folder, .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','raster')) %dopar% {
-  ##add the GEDI l4a model prediction for AGB here :
-  cat("Step 9a: Readng in no. ", match(this_csv, gedil4_folder),"csv of ", length(gedil4_folder),"csvs for iso3",iso3,"\n")
-  iso_l4_covar <- data.frame()
-  if(nchar(iso3)>3){
-    iso3_sub <- iso3 %>% str_split("_") %>% unlist %>% .[1]
-    gedi_l4  <- read.csv(paste(f.path,"WDPA_gedi_l4a_clean/",iso3_sub,"/",this_csv, sep="/")) %>% 
-      dplyr::select(shot_number, agbd, agbd_se, lat_lowestmode, lon_lowestmode, l4_quality_flag)
-    
-  } else {
-    gedi_l4  <- read.csv(paste(f.path,"WDPA_gedi_l4a_clean/",iso3,"/",this_csv, sep="/")) %>% 
-      dplyr::select(shot_number, agbd, agbd_se, lat_lowestmode, lon_lowestmode, l4_quality_flag)
-    
-  }
-  gedi_l4_samp <- tryCatch(sample_n(gedi_l4,ceiling(0.1*nrow(gedi_l4))), error=function(cond){return (gedi_l4)})
-  gedi_l4_sp <- tryCatch(SpatialPointsDataFrame(coords=gedi_l4_samp[,c("lon_lowestmode","lat_lowestmode")],
-                           proj4string=CRS("+init=epsg:4326"), data=gedi_l4_samp), error=function(cond){return (NULL)}) #%>%spTransform(., CRS("+init=epsg:6933"))
-  if(!is.null(gedi_l4_sp)){
-    gedil4_covar <- rasExtract2020(gedi_l4_sp)
-    gedil4_covar_filtered <-gedil4_covar@data %>% dplyr::filter(!is.na(agbd)) %>% dplyr::filter(l4_quality_flag==1) #export only the quality filtered observations
-    if(nrow(gedil4_covar_filtered)>0){
-      gedil4_covar_filtered[gedil4_covar_filtered==-9999] <- NA
-    }
-    gedil4_covar_filtered <- gedil4_covar_filtered[complete.cases(gedil4_covar_filtered),]
-    iso_l4_covar <- rbind(gedil4_covar_filtered,iso_l4_covar)
-  } else{
-    cat("empty file\n")
-  }
-  return(iso_l4_covar)
-}
-stopImplicitCluster()
-
-#after extracting predictor variables from the 2020 raster stack, run rf model with at least 10,000 observations
-cat("Developing RF model for AGBD...\n")
-set.seed(1234)
-samp_df <-ex_out %>% 
-  dplyr::select(-c( agbd_se, lat_lowestmode, lon_lowestmode, l4_quality_flag, shot_number))%>% 
-  dplyr::sample_n(0.05*(nrow(.))) %>% 
-  mutate(lc2019=factor(lc2019),wwf_biomes=factor(wwf_biomes),wwf_ecoreg=factor(wwf_ecoreg))
-if(nrow(samp_df)>10000){
-  samp_df <-ex_out %>% 
-    dplyr::select(-c(agbd_se, lat_lowestmode, lon_lowestmode, l4_quality_flag, shot_number))%>% 
-    dplyr::sample_n(10000) %>% 
-    mutate(lc2019=factor(lc2019),wwf_biomes=factor(wwf_biomes),wwf_ecoreg=factor(wwf_ecoreg))
-}
-cat("dimension of the modelling DF", nrow(samp_df),"\n")
-
-one_hot <- dummyVars(~ ., samp_df, fullRank = FALSE)
-samp_df_hot <- tryCatch(as.data.frame(predict(one_hot, samp_df)), error=function(e){return(samp_df)})
-names(samp_df_hot) <- make.names(names(samp_df_hot), allow_ = FALSE)
-samp_df_hot$agbd[samp_df_hot$agbd==0] <- 0.01
-rf <- ranger(
-  formula         = log(agbd) ~ ., 
-  data            = samp_df_hot, 
-  num.trees = 500,
-  mtry      = floor((length(names(samp_df_hot))-1) / 3),
-  importance      = 'impurity'
-)
-response_var="agbd"
-rsq <- rf$r.squared
-oob_rmse <- exp(sqrt(rf$prediction.error))
-varImportance <- rf$variable.importance %>% sort(decreasing = TRUE) %>% head(5) %>% names()
-model_params <- data.frame(iso3=iso3, response_var=response_var,nsample=nrow(samp_df_hot),rsq=rsq, oob_rmse=oob_rmse, 
-                           var1=varImportance[1],var2=varImportance[2], var3=varImportance[3], var4=varImportance[4], var5=varImportance[5])
-write.csv(model_params,paste(f.path,"WDPA_agbd_rf_models/","model_params/","model_params_",iso3,".csv",sep=""))
-saveRDS(rf, paste(f.path,"WDPA_agbd_rf_models/","agbd_rf_model_",iso3,".RDS",sep=""))
-
-
-#--------------Step 9b RF model for other structure metrics RH98, COVER, PAI-----------------------------------------------
-cat("Step 9b: RF model for RH98, COVER, and PAI", iso3,"\n ")
-gedil2_folder <- list.files(paste(f.path,"WDPA_gedi_l2a+l2b_clean2/",iso3,"/",sep=""))
-
-registerDoParallel(cores=round(mproc*0.5))  #read l4a data, extract values from the 2020 raster stacks and merge into a large df for rf modeling
-set.seed(1234)
-ex_out <- foreach(this_csv=gedil2_folder, .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','raster')) %dopar% {
-  ##add the GEDI l4a model prediction for AGB here :
-  cat("Step 9b: Readng in no. ", match(this_csv, gedil2_folder),"csv of ", length(gedil2_folder),"csvs for iso3",iso3,"\n")
-  iso_l2_covar <- data.frame()
-  if(nchar(iso3)>3){
-    iso3_sub <- iso3 %>% str_split("_") %>% unlist %>% .[1]
-    gedi_l2  <- read.csv(paste(f.path,"WDPA_gedi_l2a+l2b_clean2/",iso3_sub,"/",this_csv, sep="/")) %>%
-      dplyr::select(shot_number, rh_098, cover, pai, lat_lowestmode, lon_lowestmode)
-  } else {
-    gedi_l2  <- read.csv(paste(f.path,"WDPA_gedi_l2a+l2b_clean2/",iso3,"/",this_csv, sep="/")) %>%
-      dplyr::select(shot_number, rh_098, cover, pai, lat_lowestmode, lon_lowestmode)
-  }
-  
-  gedi_l2_samp <- tryCatch(sample_n(gedi_l2,ceiling(0.1*nrow(gedi_l2))), error=function(cond){return (gedi_l2)})
-  gedi_l2_sp <- tryCatch(SpatialPointsDataFrame(coords=gedi_l2_samp[,c("lon_lowestmode","lat_lowestmode")],
-                                                proj4string=CRS("+init=epsg:4326"), data=gedi_l2_samp), error=function(cond){return (NULL)}) #%>%spTransform(., CRS("+init=epsg:6933"))
-  if(!is.null(gedi_l2_sp)){
-    gedil2_covar <- rasExtract2020(gedi_l2_sp)
-    gedil2_covar_filtered <-gedil2_covar@data #export only the quality filtered observations
-    if(nrow(gedil2_covar_filtered)>0){
-      gedil2_covar_filtered[gedil2_covar_filtered==-9999] <- NA
-    }
-    gedil2_covar_filtered <- gedil2_covar_filtered[complete.cases(gedil2_covar_filtered),]
-    iso_l2_covar <- rbind(gedil2_covar_filtered,iso_l2_covar)
-  } else{
-    cat("empty file\n")
-  }
-  return(iso_l2_covar)
-}
-stopImplicitCluster()
-
-#after extracting predictor variables from the 2020 raster stack, run rf model with at least 10,000 observations
-set.seed(1234)
-samp_df <-ex_out %>% 
-  dplyr::select(-c( lat_lowestmode, lon_lowestmode, shot_number))%>% 
-  dplyr::sample_n(0.05*(nrow(.))) %>% 
-  mutate(lc2019=factor(lc2019),wwf_biomes=factor(wwf_biomes),wwf_ecoreg=factor(wwf_ecoreg))
-if(nrow(samp_df)>10000){
-  samp_df <-ex_out %>% 
-    dplyr::select(-c( lat_lowestmode, lon_lowestmode, shot_number))%>% 
-    dplyr::sample_n(10000) %>% 
-    mutate(lc2019=factor(lc2019),wwf_biomes=factor(wwf_biomes),wwf_ecoreg=factor(wwf_ecoreg))
-}
-cat("dimension of the modelling DF and building RF model for RH098", nrow(samp_df),"\n")
-one_hot <- dummyVars(~ ., samp_df, fullRank = FALSE)
-samp_df_hot <-  tryCatch(as.data.frame(predict(one_hot, samp_df)), error=function(e){return(samp_df)}) %>% dplyr::select(-c(cover, pai))
-names(samp_df_hot) <- make.names(names(samp_df_hot), allow_ = FALSE)
-rf <- ranger(
-  formula         = log(rh.098) ~ ., 
-  data            = samp_df_hot, 
-  num.trees = 500,
-  mtry      = floor((length(names(samp_df_hot))-1) / 3),
-  importance      = 'impurity'
-)
-response_var="rh_098"
-rsq <- rf$r.squared
-oob_rmse <- exp(sqrt(rf$prediction.error))
-varImportance <- rf$variable.importance %>% sort(decreasing = TRUE) %>% head(5) %>% names()
-model_params <- data.frame(iso3=iso3,response_var=response_var, nsample=nrow(samp_df_hot),rsq=rsq, oob_rmse=oob_rmse, 
-                           var1=varImportance[1],var2=varImportance[2], var3=varImportance[3], var4=varImportance[4], var5=varImportance[5])
-write.csv(model_params,paste(f.path,"WDPA_rh98_rf_models/","model_params/","model_params_",iso3,".csv",sep=""))
-saveRDS(rf, paste(f.path,"WDPA_rh98_rf_models/","rh98_rf_model_",iso3,".RDS",sep=""))
-
-
-cat("dimension of the modelling DF and building RF model for Cover", nrow(samp_df),"\n")
-one_hot <- dummyVars(~ ., samp_df, fullRank = FALSE)
-samp_df_hot <-  tryCatch(as.data.frame(predict(one_hot, samp_df)), error=function(e){return(samp_df)}) %>% dplyr::select(-c(rh_098, pai)) #%>% sample_n(0.1*(nrow(.)))
-names(samp_df_hot) <- make.names(names(samp_df_hot), allow_ = FALSE)
-rf <- ranger(
-  formula         = cover ~ .,
-  data            = samp_df_hot,
-  num.trees = 500,
-  mtry      = floor((length(names(samp_df_hot))-1) / 3),
-  importance      = 'impurity'
-)
-response_var="cover"
-rsq <- rf$r.squared
-oob_rmse <- sqrt(rf$prediction.error)
-varImportance <- rf$variable.importance %>% sort(decreasing = TRUE) %>% head(5) %>% names()
-model_params <- data.frame(iso3=iso3, response_var=response_var,nsample=nrow(samp_df_hot),rsq=rsq, oob_rmse=oob_rmse,
-                           var1=varImportance[1],var2=varImportance[2], var3=varImportance[3], var4=varImportance[4], var5=varImportance[5])
-write.csv(model_params,paste(f.path,"WDPA_cover_rf_models/","model_params/","model_params_",iso3,".csv",sep=""))
-saveRDS(rf, paste(f.path,"WDPA_cover_rf_models/","cover_rf_model_",iso3,".RDS",sep=""))
-
-cat("dimension of the modelling DF and building RF model for PAI", nrow(samp_df),"\n")
-one_hot <- dummyVars(~ ., samp_df, fullRank = FALSE)
-samp_df_hot <-  tryCatch(as.data.frame(predict(one_hot, samp_df)), error=function(e){return(samp_df)}) %>% dplyr::select(-c(cover, rh_098))
-names(samp_df_hot) <- make.names(names(samp_df_hot), allow_ = FALSE)
-rf <- ranger(
-  formula         = pai ~ .,
-  data            = samp_df_hot,
-  num.trees = 500,
-  mtry      = floor((length(names(samp_df_hot))-1) / 3),
-  importance      = 'impurity'
-)
-response_var <- "pai"
-rsq <- rf$r.squared
-oob_rmse <- sqrt(rf$prediction.error)
-varImportance <- rf$variable.importance %>% sort(decreasing = TRUE) %>% head(5) %>% names()
-model_params <- data.frame(iso3=iso3, response_var=response_var,nsample=nrow(samp_df_hot),rsq=rsq, oob_rmse=oob_rmse, 
-                           var1=varImportance[1],var2=varImportance[2], var3=varImportance[3], var4=varImportance[4], var5=varImportance[5])
-write.csv(model_params,paste(f.path,"WDPA_pai_rf_models/","model_params/","model_params_",iso3,".csv",sep=""))
-saveRDS(rf, paste(f.path,"WDPA_pai_rf_models/","pai_rf_model_",iso3,".RDS",sep=""))
-
-cat("Done processing step 9\n")
+# #---------------STEP9: Random Forest Modelling AGBD w/ 2020 Covars-------------------------------------------------
+# cat("Step 9: RF model for AGBD", iso3,"\n ")
+# cat("Filtering l4a files...\n")
+# if(nchar(iso3)>3){
+#   iso3_sub <- iso3 %>% str_split("_") %>% unlist %>% .[1]
+#   gedil4_folder <- list.files(paste(f.path,"WDPA_gedi_l4a_clean/",iso3_sub,"/",sep=""))
+# } else {
+#   gedil4_folder <- list.files(paste(f.path,"WDPA_gedi_l4a_clean/",iso3,"/",sep=""))
+# }
+# 
+# cat("Compiling and sampling l4a dataset...\n")
+# registerDoParallel(cores=round(mproc*0.5))  #read l4a data, extract values from the 2020 raster stacks and merge into a large df for rf modeling
+# ex_out <- foreach(this_csv=gedil4_folder, .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','raster')) %dopar% {
+#   ##add the GEDI l4a model prediction for AGB here :
+#   cat("Step 9a: Readng in no. ", match(this_csv, gedil4_folder),"csv of ", length(gedil4_folder),"csvs for iso3",iso3,"\n")
+#   iso_l4_covar <- data.frame()
+#   if(nchar(iso3)>3){
+#     iso3_sub <- iso3 %>% str_split("_") %>% unlist %>% .[1]
+#     gedi_l4  <- read.csv(paste(f.path,"WDPA_gedi_l4a_clean/",iso3_sub,"/",this_csv, sep="/")) %>% 
+#       dplyr::select(shot_number, agbd, agbd_se, lat_lowestmode, lon_lowestmode, l4_quality_flag)
+#     
+#   } else {
+#     gedi_l4  <- read.csv(paste(f.path,"WDPA_gedi_l4a_clean/",iso3,"/",this_csv, sep="/")) %>% 
+#       dplyr::select(shot_number, agbd, agbd_se, lat_lowestmode, lon_lowestmode, l4_quality_flag)
+#     
+#   }
+#   gedi_l4_samp <- tryCatch(sample_n(gedi_l4,ceiling(0.1*nrow(gedi_l4))), error=function(cond){return (gedi_l4)})
+#   gedi_l4_sp <- tryCatch(SpatialPointsDataFrame(coords=gedi_l4_samp[,c("lon_lowestmode","lat_lowestmode")],
+#                            proj4string=CRS("+init=epsg:4326"), data=gedi_l4_samp), error=function(cond){return (NULL)}) #%>%spTransform(., CRS("+init=epsg:6933"))
+#   if(!is.null(gedi_l4_sp)){
+#     gedil4_covar <- rasExtract2020(gedi_l4_sp)
+#     gedil4_covar_filtered <-gedil4_covar@data %>% dplyr::filter(!is.na(agbd)) %>% dplyr::filter(l4_quality_flag==1) #export only the quality filtered observations
+#     if(nrow(gedil4_covar_filtered)>0){
+#       gedil4_covar_filtered[gedil4_covar_filtered==-9999] <- NA
+#     }
+#     gedil4_covar_filtered <- gedil4_covar_filtered[complete.cases(gedil4_covar_filtered),]
+#     iso_l4_covar <- rbind(gedil4_covar_filtered,iso_l4_covar)
+#   } else{
+#     cat("empty file\n")
+#   }
+#   return(iso_l4_covar)
+# }
+# stopImplicitCluster()
+# 
+# #after extracting predictor variables from the 2020 raster stack, run rf model with at least 10,000 observations
+# cat("Developing RF model for AGBD...\n")
+# set.seed(1234)
+# samp_df <-ex_out %>% 
+#   dplyr::select(-c( agbd_se, lat_lowestmode, lon_lowestmode, l4_quality_flag, shot_number))%>% 
+#   dplyr::sample_n(0.05*(nrow(.))) %>% 
+#   mutate(lc2019=factor(lc2019),wwf_biomes=factor(wwf_biomes),wwf_ecoreg=factor(wwf_ecoreg))
+# if(nrow(samp_df)>10000){
+#   samp_df <-ex_out %>% 
+#     dplyr::select(-c(agbd_se, lat_lowestmode, lon_lowestmode, l4_quality_flag, shot_number))%>% 
+#     dplyr::sample_n(10000) %>% 
+#     mutate(lc2019=factor(lc2019),wwf_biomes=factor(wwf_biomes),wwf_ecoreg=factor(wwf_ecoreg))
+# }
+# cat("dimension of the modelling DF", nrow(samp_df),"\n")
+# 
+# one_hot <- dummyVars(~ ., samp_df, fullRank = FALSE)
+# samp_df_hot <- tryCatch(as.data.frame(predict(one_hot, samp_df)), error=function(e){return(samp_df)})
+# names(samp_df_hot) <- make.names(names(samp_df_hot), allow_ = FALSE)
+# samp_df_hot$agbd[samp_df_hot$agbd==0] <- 0.01
+# rf <- ranger(
+#   formula         = log(agbd) ~ ., 
+#   data            = samp_df_hot, 
+#   num.trees = 500,
+#   mtry      = floor((length(names(samp_df_hot))-1) / 3),
+#   importance      = 'impurity'
+# )
+# response_var="agbd"
+# rsq <- rf$r.squared
+# oob_rmse <- exp(sqrt(rf$prediction.error))
+# varImportance <- rf$variable.importance %>% sort(decreasing = TRUE) %>% head(5) %>% names()
+# model_params <- data.frame(iso3=iso3, response_var=response_var,nsample=nrow(samp_df_hot),rsq=rsq, oob_rmse=oob_rmse, 
+#                            var1=varImportance[1],var2=varImportance[2], var3=varImportance[3], var4=varImportance[4], var5=varImportance[5])
+# write.csv(model_params,paste(f.path,"WDPA_agbd_rf_models/","model_params/","model_params_",iso3,".csv",sep=""))
+# saveRDS(rf, paste(f.path,"WDPA_agbd_rf_models/","agbd_rf_model_",iso3,".RDS",sep=""))
+# 
+# 
+# #--------------Step 9b RF model for other structure metrics RH98, COVER, PAI-----------------------------------------------
+# cat("Step 9b: RF model for RH98, COVER, and PAI", iso3,"\n ")
+# gedil2_folder <- list.files(paste(f.path,"WDPA_gedi_l2a+l2b_clean2/",iso3,"/",sep=""))
+# 
+# registerDoParallel(cores=round(mproc*0.5))  #read l4a data, extract values from the 2020 raster stacks and merge into a large df for rf modeling
+# set.seed(1234)
+# ex_out <- foreach(this_csv=gedil2_folder, .combine = foreach_rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','raster')) %dopar% {
+#   ##add the GEDI l4a model prediction for AGB here :
+#   cat("Step 9b: Readng in no. ", match(this_csv, gedil2_folder),"csv of ", length(gedil2_folder),"csvs for iso3",iso3,"\n")
+#   iso_l2_covar <- data.frame()
+#   if(nchar(iso3)>3){
+#     iso3_sub <- iso3 %>% str_split("_") %>% unlist %>% .[1]
+#     gedi_l2  <- read.csv(paste(f.path,"WDPA_gedi_l2a+l2b_clean2/",iso3_sub,"/",this_csv, sep="/")) %>%
+#       dplyr::select(shot_number, rh_098, cover, pai, lat_lowestmode, lon_lowestmode)
+#   } else {
+#     gedi_l2  <- read.csv(paste(f.path,"WDPA_gedi_l2a+l2b_clean2/",iso3,"/",this_csv, sep="/")) %>%
+#       dplyr::select(shot_number, rh_098, cover, pai, lat_lowestmode, lon_lowestmode)
+#   }
+#   
+#   gedi_l2_samp <- tryCatch(sample_n(gedi_l2,ceiling(0.1*nrow(gedi_l2))), error=function(cond){return (gedi_l2)})
+#   gedi_l2_sp <- tryCatch(SpatialPointsDataFrame(coords=gedi_l2_samp[,c("lon_lowestmode","lat_lowestmode")],
+#                                                 proj4string=CRS("+init=epsg:4326"), data=gedi_l2_samp), error=function(cond){return (NULL)}) #%>%spTransform(., CRS("+init=epsg:6933"))
+#   if(!is.null(gedi_l2_sp)){
+#     gedil2_covar <- rasExtract2020(gedi_l2_sp)
+#     gedil2_covar_filtered <-gedil2_covar@data #export only the quality filtered observations
+#     if(nrow(gedil2_covar_filtered)>0){
+#       gedil2_covar_filtered[gedil2_covar_filtered==-9999] <- NA
+#     }
+#     gedil2_covar_filtered <- gedil2_covar_filtered[complete.cases(gedil2_covar_filtered),]
+#     iso_l2_covar <- rbind(gedil2_covar_filtered,iso_l2_covar)
+#   } else{
+#     cat("empty file\n")
+#   }
+#   return(iso_l2_covar)
+# }
+# stopImplicitCluster()
+# 
+# #after extracting predictor variables from the 2020 raster stack, run rf model with at least 10,000 observations
+# set.seed(1234)
+# samp_df <-ex_out %>% 
+#   dplyr::select(-c( lat_lowestmode, lon_lowestmode, shot_number))%>% 
+#   dplyr::sample_n(0.05*(nrow(.))) %>% 
+#   mutate(lc2019=factor(lc2019),wwf_biomes=factor(wwf_biomes),wwf_ecoreg=factor(wwf_ecoreg))
+# if(nrow(samp_df)>10000){
+#   samp_df <-ex_out %>% 
+#     dplyr::select(-c( lat_lowestmode, lon_lowestmode, shot_number))%>% 
+#     dplyr::sample_n(10000) %>% 
+#     mutate(lc2019=factor(lc2019),wwf_biomes=factor(wwf_biomes),wwf_ecoreg=factor(wwf_ecoreg))
+# }
+# cat("dimension of the modelling DF and building RF model for RH098", nrow(samp_df),"\n")
+# one_hot <- dummyVars(~ ., samp_df, fullRank = FALSE)
+# samp_df_hot <-  tryCatch(as.data.frame(predict(one_hot, samp_df)), error=function(e){return(samp_df)}) %>% dplyr::select(-c(cover, pai))
+# names(samp_df_hot) <- make.names(names(samp_df_hot), allow_ = FALSE)
+# rf <- ranger(
+#   formula         = log(rh.098) ~ ., 
+#   data            = samp_df_hot, 
+#   num.trees = 500,
+#   mtry      = floor((length(names(samp_df_hot))-1) / 3),
+#   importance      = 'impurity'
+# )
+# response_var="rh_098"
+# rsq <- rf$r.squared
+# oob_rmse <- exp(sqrt(rf$prediction.error))
+# varImportance <- rf$variable.importance %>% sort(decreasing = TRUE) %>% head(5) %>% names()
+# model_params <- data.frame(iso3=iso3,response_var=response_var, nsample=nrow(samp_df_hot),rsq=rsq, oob_rmse=oob_rmse, 
+#                            var1=varImportance[1],var2=varImportance[2], var3=varImportance[3], var4=varImportance[4], var5=varImportance[5])
+# write.csv(model_params,paste(f.path,"WDPA_rh98_rf_models/","model_params/","model_params_",iso3,".csv",sep=""))
+# saveRDS(rf, paste(f.path,"WDPA_rh98_rf_models/","rh98_rf_model_",iso3,".RDS",sep=""))
+# 
+# 
+# cat("dimension of the modelling DF and building RF model for Cover", nrow(samp_df),"\n")
+# one_hot <- dummyVars(~ ., samp_df, fullRank = FALSE)
+# samp_df_hot <-  tryCatch(as.data.frame(predict(one_hot, samp_df)), error=function(e){return(samp_df)}) %>% dplyr::select(-c(rh_098, pai)) #%>% sample_n(0.1*(nrow(.)))
+# names(samp_df_hot) <- make.names(names(samp_df_hot), allow_ = FALSE)
+# rf <- ranger(
+#   formula         = cover ~ .,
+#   data            = samp_df_hot,
+#   num.trees = 500,
+#   mtry      = floor((length(names(samp_df_hot))-1) / 3),
+#   importance      = 'impurity'
+# )
+# response_var="cover"
+# rsq <- rf$r.squared
+# oob_rmse <- sqrt(rf$prediction.error)
+# varImportance <- rf$variable.importance %>% sort(decreasing = TRUE) %>% head(5) %>% names()
+# model_params <- data.frame(iso3=iso3, response_var=response_var,nsample=nrow(samp_df_hot),rsq=rsq, oob_rmse=oob_rmse,
+#                            var1=varImportance[1],var2=varImportance[2], var3=varImportance[3], var4=varImportance[4], var5=varImportance[5])
+# write.csv(model_params,paste(f.path,"WDPA_cover_rf_models/","model_params/","model_params_",iso3,".csv",sep=""))
+# saveRDS(rf, paste(f.path,"WDPA_cover_rf_models/","cover_rf_model_",iso3,".RDS",sep=""))
+# 
+# cat("dimension of the modelling DF and building RF model for PAI", nrow(samp_df),"\n")
+# one_hot <- dummyVars(~ ., samp_df, fullRank = FALSE)
+# samp_df_hot <-  tryCatch(as.data.frame(predict(one_hot, samp_df)), error=function(e){return(samp_df)}) %>% dplyr::select(-c(cover, rh_098))
+# names(samp_df_hot) <- make.names(names(samp_df_hot), allow_ = FALSE)
+# rf <- ranger(
+#   formula         = pai ~ .,
+#   data            = samp_df_hot,
+#   num.trees = 500,
+#   mtry      = floor((length(names(samp_df_hot))-1) / 3),
+#   importance      = 'impurity'
+# )
+# response_var <- "pai"
+# rsq <- rf$r.squared
+# oob_rmse <- sqrt(rf$prediction.error)
+# varImportance <- rf$variable.importance %>% sort(decreasing = TRUE) %>% head(5) %>% names()
+# model_params <- data.frame(iso3=iso3, response_var=response_var,nsample=nrow(samp_df_hot),rsq=rsq, oob_rmse=oob_rmse, 
+#                            var1=varImportance[1],var2=varImportance[2], var3=varImportance[3], var4=varImportance[4], var5=varImportance[5])
+# write.csv(model_params,paste(f.path,"WDPA_pai_rf_models/","model_params/","model_params_",iso3,".csv",sep=""))
+# saveRDS(rf, paste(f.path,"WDPA_pai_rf_models/","pai_rf_model_",iso3,".RDS",sep=""))
+# 
+# cat("Done processing step 9\n")
 
 #---------------[NOT NEEDED FOR NOW] STEP9: Calculate per biome summary stats, 1 biome per row, removing dup gedi shots in overlapping region------------------------
 # gedi_paf <-list.files(paste(f.path,"WDPA_GEDI_extract3/",iso3,"_wk",gediwk,sep=""), pattern=".RDS", full.names = FALSE)
