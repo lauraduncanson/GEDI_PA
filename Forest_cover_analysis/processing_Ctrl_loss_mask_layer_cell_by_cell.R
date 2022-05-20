@@ -27,7 +27,7 @@ getLossAreaPerCtrl <- function(iso3) {
   
   write_f.path <- "/gpfs/data1/duncansongp/GEDI_global_PA/WDPA_lost_PA_polygons/New_method/"
   
-  ###read in the control file for every match and prepare it as a spdf
+  ###read in the PA/control file for every match and prepare it as a spdf
   match_results <- readRDS( paste(rds.f.path,iso3,"_Ctrl.RDS",sep="")) 
   if(is.null(match_results)){
     next
