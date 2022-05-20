@@ -27,8 +27,8 @@ getLossAreaPerCtrl <- function(iso3) {
   
   write_f.path <- "/gpfs/data1/duncansongp/GEDI_global_PA/WDPA_lost_PA_polygons/New_method/"
   
-  ###read in the matched file and prepare it as a spdf
-  match_results <- readRDS( paste(rds.f.path,iso3,"_Ctrl.RDS",sep=""))  #testing with the the first pa file from iso3
+  ###read in the control file for every match and prepare it as a spdf
+  match_results <- readRDS( paste(rds.f.path,iso3,"_Ctrl.RDS",sep="")) 
   if(is.null(match_results)){
     next
   }
@@ -78,6 +78,8 @@ getLossAreaPerCtrl <- function(iso3) {
   tiles_processed <- unique(match_results_with_tileinfo_SP$tile)
   tiles_to_process <- vector()
   print(tiles_processed)
+  
+  #Double-check to prevent the processing of already processed tiles
   for(i in 1:length(tiles_processed)){
     if (file.exists(paste(write_f.path, iso3,"/",iso3,"_Ctrl_with_dup_", tiles_processed[i],".rds",sep=""))){
        print(paste("file ", write_f.path, iso3,"/",iso3,"_Ctrl_with_dup_", tiles_processed[i],".rds", " exists",sep=""))
@@ -87,34 +89,37 @@ getLossAreaPerCtrl <- function(iso3) {
     
   }
   print(tiles_to_process)
-  registerDoParallel(10)  #parallelize across 15 tiles at a time
+  registerDoParallel(10)  #parallelize across 10 tiles at a time
   startTime <- Sys.time()
   foreach(this_r=unique(tiles_to_process),.combine = rbind, .packages=c('raster','sp','magrittr', 'dplyr','tidyr','optmatch','doParallel')) %dopar% {
     cat(this_r,match(this_r, unique(tiles_to_process)),"-- out of",length(unique(tiles_to_process)),"\n")
-    #this_r = "Hansen_GFC-2020-v1.8_lossmask_10N_090W.tif"
     
     contiAGB <- data.frame()
-    sampleSub <- match_results_with_tileinfo_SP[match_results_with_tileinfo_SP$tile==this_r,]
+    sampleSub <- match_results_with_tileinfo_SP[match_results_with_tileinfo_SP$tile==this_r,] #getting the SPD with all the cells within a single forest cover loss tile
     cat("rasterizing...\n")
-    world_region_sub <- crop(world_region,extent(buffer(sampleSub,10000)))
-    rasOutST <- rasterize(sampleSub@coords, field=as.numeric(sampleSub$status), world_region_sub)
+    world_region_sub <- crop(world_region,extent(buffer(sampleSub,10000))) # cropping the 1 km raster to the extent of the SPD to process within this tile
+    
+    ### Rasterizing the SPD using the cropped 1 km raster template and adding the status, biome and id of the matched PA as raster fields
+    rasOutST <- rasterize(sampleSub@coords, field=as.numeric(sampleSub$status), world_region_sub) 
     rasOutBIOM <- rasterize(sampleSub@coords, field=sampleSub$wwfbiomnum, world_region_sub,fun=getmode)
     rasOutPAID <- rasterize(sampleSub@coords, field=as.numeric(sampleSub$pa_id), world_region_sub,fun=getmode)
     rasOut <- stack(rasOutST,rasOutPAID, rasOutBIOM)#rasOutST
+    
+    ### Converting the raster to gridpolygon
     gridPolygon <- rasterToPolygons(rasOut)
     names(gridPolygon) <-c("status","pa_id","wwfbiom") #names(sampleTile)[4:18]
-    #gridPolygonExPrj <- gridPolygon %>% spTransform(paste("+init=epsg:",4326,sep="")) %>%union() %>% buffer(0.1) %>% extent()
-    #gridPolygonExPrj <- gridPolygon %>% spTransform(paste("+init=epsg:",4326,sep="")) %>% buffer(0.1) %>% extent()
-    gridPolygonExPrj <- gridPolygon %>% spTransform(paste("+init=epsg:",4326,sep="")) %>% extent()
     
-    hansan_loss <- raster(paste(hansen.loss.f.path,this_r, sep=""))
+    gridPolygonExPrj <- gridPolygon %>% spTransform(paste("+init=epsg:",4326,sep="")) %>% extent() # getting the spatial extent of gridpolygon
+    
+    hansan_loss <- raster(paste(hansen.loss.f.path,this_r, sep="")) # Reading the forest cover loss tile from the source folder to process
     
     
     cat("Projetcing...\n")
+    ### Cropping the tile to the spatial extent of the PA/match gridpolygon and then reprojecting the cropped raster to 6933 projection
     hansan_loss_prj <- hansan_loss %>%crop(gridPolygonExPrj)%>% projectRaster(.,crs="+init=epsg:6933 +proj=cea +lon_0=0 +lat_ts=30 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0 ", method="ngb")  
     cat("aggregating...\n")
-    #hansan_loss_prj2 <- tryCatch(raster::resample(hansan_loss_prj,rasOut,method='ngb'), error=function(cond){return(NULL)})
-    
+    ### Converting the resolution of 30 cm forest cover loss raster tile to 1 km raster using the aggregate method  
+   
     ini_res <- res(hansan_loss_prj)
     
     fact_res <- res(rasOut)
@@ -123,9 +128,12 @@ getLossAreaPerCtrl <- function(iso3) {
     
     hansan_loss_prj2 <- tryCatch(raster::aggregate(hansan_loss_prj,c(fact_res_x, fact_res_y),fun=mean), error=function(cond){return(NULL)})
     cat("resampling...\n")
+    
+    ### Resampling the 1 km aggregated forest cover loss tile to match the resolution of the PA/match 1 km raster 
     hansan_loss_prj3 <- tryCatch(raster::resample(hansan_loss_prj2,rasOut,method='ngb'), error=function(cond){return(NULL)})
     cat("extracting...\n")
-    #sampleloss <- tryCatch(raster::extract(hansan_loss_prj3, gridPolygon, df=FALSE, method="simple"), error=function(cond){return(NULL)})
+    
+    ### Extracting the corresponding forest cover loss values for the PA/matched raster from the resampled forest cover loss tile
     sampleloss_df <- exact_extract(hansan_loss_prj3, gridPolygon)
     sampleloss_df_bound <- bind_rows(sampleloss_df, .id = "coverage_fraction")  
     sampleloss_end_df <- sampleloss_df_bound  %>% group_by(coverage_fraction) %>% filter(row_number() == max(row_number()))
@@ -153,9 +161,10 @@ getLossAreaPerCtrl <- function(iso3) {
   
 }
 
-#country_list <- c("NIC")
-cont_country_list <- read.csv("/gpfs/data1/duncansongp/GEDI_global_PA/csv/iso3_region_pair.csv")
+
+#Parallely processing the control region forest cover loss for multiple countries at a time
+cont_country_list <- read.csv("/gpfs/data1/duncansongp/GEDI_global_PA/csv/iso3_region_pair.csv") #Reading the list of countries to process 
 
 country_list <- cont_country_list$iso3
 
-mcmapply(FUN = getLossAreaPerCtrl,country_list, mc.cores = 10)
+mcmapply(FUN = getLossAreaPerCtrl,country_list, mc.cores = 10) #mc.cores = 10 -> processing 10 countries at a time, which can be adapted based on the system used to process
