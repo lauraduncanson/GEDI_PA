@@ -1,3 +1,7 @@
+#This script explores the relationship between protected age and the mean difference in AGBD (b/t PA and control) by forest/non-forest types.
+# essentially the significnce by PA age is tested by forest/non-forest dominant PA types, and the plot is for Fig S3 in the manuscript. 
+
+
 packages <- c("sp","rgdal","sf","rgeos","dplyr","plyr","ggplot2","raster","mapview","stringr",
               "maptools","gridExtra","lattice","MASS","foreach","optmatch","doParallel","RItools",
               "rlang","tidyr","magrittr","viridis","ggmap","Hmisc","hrbrthemes","spatialEco","bit64","randomForest", "modelr")
@@ -398,11 +402,13 @@ agbdDF_Samp %>% dplyr::filter(!is.na(paAge)) %>%
 agbdDF_Samp %>% dplyr::filter(!is.na(paAge)) %>% 
   dplyr::mutate(bins=cut(paAge, breaks =seq(0,221,21))) %>% 
   filter(!is.na(bins)) %>% 
-  group_by(forest, bins,status) %>% dplyr::summarise(mm=mean(AGB2000,na.rm=TRUE), sdm=sd(AGB2000, na.rm = TRUE)) %>% as.data.frame() %>% 
+  group_by(forest, bins,status) %>% 
+  dplyr::summarise(mm=mean(AGB2000*0.49,na.rm=TRUE), sdm=sd(AGB2000*0.49, na.rm = TRUE),npa=as.integer(length(unique(pa_id)))) %>% 
+  as.data.frame() %>% 
   mutate(forest_bin=paste(forest, bins,sep="_")) %>% 
   full_join(tf, by="forest_bin") %>% 
-  mutate(diff2000=round(absolute_diff_AGBD, 2)) %>% 
-  mutate(diff2000=ifelse(status==0, NA, paste("Mean difference\n",diff2000," (Mg/ha)", sep="")))->tf_org
+  mutate(diff2000=round(absolute_diff_AGBD*0.49, 2)) %>% 
+  mutate(diff2000=ifelse(status==0, NA, paste("Mean difference\n",diff2000," (Mg/ha)\nn=",formatC(npa, format="d", big.mark=","), sep="")))->tf_org
 
 tf_org$forest[27] <- "non-forest"
 tf_org$bins[27] <- "(126,147]"
@@ -410,33 +416,32 @@ tf_org$status[27] <- 0
 
 tf_org$bins <- factor(tf_org$bins, levels=c("(0,21]","(21,42]",'(42,63]', "(63,84]","(84,105]",'(105,126]',"(126,147]"),
                       labels=c("0 ~ 21", "22 ~ 42", "43 ~ 63" ,"64 ~ 84", "85 ~ 105" ," 106 ~ 126", "127 ~ 147"))
+
 tf_org$forest <- factor(tf_org$forest, levels=c("forest","non-forest"), labels = c("PAs in forest-domiant biomes", "PAs in non-forest-domiant biomes"))
 
 pa_age_plot <- ggplot(tf_org, aes(x = bins, y = mm,color=as.character(status), shape=as.character(status))) + 
   facet_wrap(vars(forest), scales = "free_y")+
-  scale_shape_manual("Protected vs. Controls", values=c(18,17),labels=c("Control","Protected/treated"))+
-  scale_color_manual("Protected vs. Controls", values=c("#e39244","#89d149"), labels=c("Control","Protected/treated"))+
+  scale_shape_manual("Protected vs. Controls\n(Data presented as mean values +/- SD)", values=c(18,17),labels=c("Control","Protected/treated"))+
+  scale_color_manual("Protected vs. Controls\n(Data presented as mean values +/- SD)", values=c("#e39244","#89d149"), labels=c("Control","Protected/treated"))+
   geom_point(position = position_dodge(.5)) +
   geom_pointrange(aes(ymin  = mm - sdm,
-                      ymax  = mm + sdm),
-                  # width = 0.9,
-                  size  = 0.7,
+                      ymax  = mm + sdm),size  = 0.7,# width = 0.9,
                   position = position_dodge(.5)) +
   geom_text(
-    mapping = aes(x = bins, y = Inf, label = diff2000),hjust   = 1.03,
+    mapping = aes(x = bins, y = Inf, label = diff2000),hjust   = 1.04,label.padding=0.5,
     vjust   = 0.04,size=4, color="dark green",
     color = "black")+
   theme_bw() +
   coord_flip()+
-  labs(y="Year 2000 AGBD (Mg/ha)", x="PA Age (years)")+ 
+  labs(y="Year 2000 AGCD (Mg/ha)", x="PA Age (years)")+ 
   theme(strip.background = element_rect(fill="transparent", colour = "transparent"), strip.text = element_text(size = 14)) +
-  theme(text=element_text(family="Helvetica", size=14))+ theme(axis.text = element_text(size = 12, color="black")) +
+  theme(text=element_text(family="Helvetica", size=11))+ theme(axis.text = element_text(size = 12, color="black")) +
   theme(axis.text.x = element_text(angle = 45, hjust=1))+
-  theme(legend.position = c(0.88, 0.93),
+  theme(legend.position = c(0.837, 0.93),legend.text=element_text(size=10),
         legend.background = element_rect(fill = "white", color = "black"))
 
-ggplot2::ggsave(filename="/gpfs/data1/duncansongp/GEDI_global_PA/figures/JAN21_FIGS/fig2_paAge_effect_forest.png", 
-                plot=pa_age_plot, width=10, height=8,
+ggplot2::ggsave(filename="/gpfs/data1/duncansongp/GEDI_global_PA/figures/JAN21_FIGS/fig2_paAge_effect_forest_C_v3.png", 
+                plot=pa_age_plot, width=10, height=8.2,
                 units = "in", dpi="print",bg = "transparent")
 
 

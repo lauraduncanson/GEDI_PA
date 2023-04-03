@@ -10,12 +10,12 @@ package.check <- lapply(packages, FUN = function(x) {
 
 fpath <- "/gpfs/data1/duncansongp/GEDI_global_PA/"
 dd <- list.files(path = paste(fpath, "iso_full_nodup",sep=""), pattern=".csv",full.names = TRUE, recursive=FALSE)
-bbox=matrix(c(-179.9,-53,179.9,53), nrow = 2, dimnames = list(c("x","y"), c("min", "max")))  #get a worldwide bbox to run globally 
+# bbox=matrix(c(-179.9,-53,179.9,53), nrow = 2, dimnames = list(c("x","y"), c("min", "max")))  #get a worldwide bbox to run globally 
+bbox <- matrix(c(-83,-27.6,-34, 13), nrow = 2, dimnames = list(c("x","y"), c("min", "max")))
 iso_region <- read.csv("/gpfs/data1/duncansongp/GEDI_global_PA/csv/iso3_region_pair.csv") 
 oPAs <- read.csv("/gpfs/data1/duncansongp/GEDI_global_PA/csv/balanced_paids.csv") %>% .$x
 # bc_big <- get_map(location = bbox,maptype="roadmap", source="osm", crop=TRUE)
 # top=%quantile(0.999)%>%round_any(10, f=ceiling)
-
 
 #------------rh98[scattermore method]----------------------
 dd <- list.files(path = paste(fpath, "WDPA_gedi_l2a+l2b_clean2/",sep=""), pattern="",full.names = TRUE, recursive=TRUE)
@@ -30,13 +30,13 @@ maptheme <- theme(panel.grid = element_blank()) +
   theme(axis.ticks = element_blank()) +
   theme(axis.title = element_blank()) +
   theme(legend.position = "bottom") +
-  theme(legend.key.width=unit(3,"cm"))+
+  theme(legend.key.width=unit(1.5,"cm"))+
   theme(panel.grid = element_blank()) +
   theme(panel.background = element_rect(fill = "#596673")) +
   theme(plot.margin = unit(c(0, 0, 0.5, 0), 'cm'))+
-  theme(text=element_text(family="Helvetica", face="bold", size=12),
-        legend.title=element_text(size=12), 
-        legend.text=element_text(size=12),
+  theme(text=element_text(family="Helvetica", face="bold", size=10),
+        legend.title=element_text(size=8), 
+        legend.text=element_text(size=8),
         rect = element_rect(fill = "transparent")) 
 
 country_shapes <- geom_polygon(aes(x = long, y = lat, group = group),
@@ -48,7 +48,7 @@ country_border <- geom_polygon(aes(x = long, y = lat, group = group),
                                fill = "transparent", color = "#515151",
                                size = 0.15)
 
-mapcoords <- coord_fixed(xlim = c(-178, 180), ylim = c(-51.6, 51.6))
+mapcoords <- coord_fixed(xlim = c(-83.3, -36.5), ylim = c(-26, 12.5))
 
 mbase<- ggplot() +  mapcoords + maptheme+ country_shapes+
   scale_color_gradientn(
@@ -58,7 +58,7 @@ mbase<- ggplot() +  mapcoords + maptheme+ country_shapes+
               "#8c96c6",
               "#8c6bb1",
               "#88419d",
-              "#253494", "#004529"),
+              "#253494", "#006600"),  ##cc0613
     na.value="#f5f5f5",
     breaks=b, labels=lab,name=paste("Max Canopy Height (m)")) 
 
@@ -73,7 +73,7 @@ mbase=mbase+ geom_point(data=t,
 
 set.seed(1234)
 index <- c(seq(1, length(dd), 105), length(dd))
-for (ind in 2:length(index)){
+for (ind in 2:length(index)){  #length(index)){
   print(ind)
   start <- index[ind-1]
   end <- index[ind]
@@ -84,12 +84,12 @@ for (ind in 2:length(index)){
     sub_dd_all <- data.frame()
     print(d)
     rm(dsub)
-    dsub=read.csv(d)%>% #dplyr::filter(pa_id %in% oPAs) %>% 
+    dsub <- read.csv(d)%>% #dplyr::filter(pa_id %in% oPAs) %>% 
       dplyr::select(lon_lowestmode, lat_lowestmode,rh_098) %>% dplyr::mutate(rh_098=rh_098/100)
     print("alldata")
-    if(nrow(dsub)>5000){
-      dsub <- dsub %>% sample_n(5000)
-    }
+    # if(nrow(dsub)>5000){  #use the sampling to reduce plotted points for worldwide plotting
+    #   dsub <- dsub %>% sample_n(5000)
+    # }
     sub_dd_all <- rbind(sub_dd_all, dsub)
     return(sub_dd_all)
     
@@ -106,17 +106,17 @@ for (ind in 2:length(index)){
 
 }
 
-mapcoords <- coord_fixed(xlim = c(-178, 180), ylim = c(-51.6, 51.6))
+mapcoords <- mapcoords #coord_fixed(xlim = c(-178, 180), ylim = c(-51.6, 51.6))
 
 
-mbase1=mbase+country_border+  #+labs(title = "Distribution of GEDI shots")
+mbase1 <- mbase+country_border+  #+labs(title = "Distribution of GEDI shots")
   scale_fill_manual(values=NA) +  mapcoords+            
   guides(fill=guide_legend("No valid data", override.aes=list(colour="#f5f5f5"), title.position="bottom"))+
   guides(fill = FALSE)
 
 mbase1=mbase1+labs(tag = "C")
 
-ggplot2::ggsave(filename="/gpfs/data1/duncansongp/GEDI_global_PA/figures/JAN21_FIGS/fig2_gedishots_dist_rh98_mar26_2.png", 
+ggplot2::ggsave(filename="/gpfs/data1/duncansongp/GEDI_global_PA/figures/JAN21_FIGS/fig2_gedishots_dist_rh98_oct25_amaz_zoom.png", 
                 plot=mbase1, width=12, height=4,
                 units = "in", dpi="print",bg = "transparent")
 
@@ -135,13 +135,13 @@ maptheme <- theme(panel.grid = element_blank()) +
   theme(axis.ticks = element_blank()) +
   theme(axis.title = element_blank()) +
   theme(legend.position = "bottom") +
-  theme(legend.key.width=unit(3,"cm"))+
+  theme(legend.key.width=unit(1.5,"cm"))+
   theme(panel.grid = element_blank()) +
   theme(panel.background = element_rect(fill = "#596673")) +
   theme(plot.margin = unit(c(0, 0, 0.5, 0), 'cm'))+
-  theme(text=element_text(family="Helvetica", face="bold", size=12),
-        legend.title=element_text(size=12), 
-        legend.text=element_text(size=12),
+  theme(text=element_text(family="Helvetica", face="bold", size=10),
+        legend.title=element_text(size=8), 
+        legend.text=element_text(size=8),
         rect = element_rect(fill = "transparent")) 
 
 country_shapes <- geom_polygon(aes(x = long, y = lat, group = group),
@@ -153,7 +153,7 @@ country_border <- geom_polygon(aes(x = long, y = lat, group = group),
                                fill = "transparent", color = "#515151",
                                size = 0.15)
 
-mapcoords <- coord_fixed(xlim = c(-178, 180), ylim = c(-51.6, 51.6))
+mapcoords <-   coord_fixed(xlim = c(-83.3, -36.5), ylim = c(-26, 12.5)) #coord_fixed(xlim = c(-178, 180), ylim = c(-51.6, 51.6))
 
 mbase<- ggplot() +  mapcoords + maptheme+ country_shapes+
   scale_color_gradientn(
@@ -194,7 +194,7 @@ lab[length(b)]="345+\n(~top 1%)"
 
 nonforest=c("Montane Grasslands & Shrublands", "Deserts & Xeric Shrublands", "Tundra", "Tropical & Subtropical Grasslands, Savannas & Shrublands",
             "Temperate Grasslands, Savannas & Shrublands","Flooded Grasslands & Savannas")
-mapcoords <-coord_fixed(xlim = c(-178, 180), ylim = c(-55, 55)) #coord_fixed(xlim =c(60, 75) , ylim =c(29, 39) )   #
+mapcoords <-    coord_fixed(xlim = c(-83.3, -36.5), ylim = c(-26, 12.5))  #coord_fixed(xlim = c(-178, 180), ylim = c(-55, 55)) #coord_fixed(xlim =c(60, 75) , ylim =c(29, 39) )   #
 country_shapes <- geom_polygon(aes(x = long, y = lat, group = group),
                                data = map_data('world'),
                                fill = "#CECECE", color = "transparent",
@@ -209,13 +209,13 @@ maptheme <- theme(panel.grid = element_blank()) +
   theme(axis.ticks = element_blank()) +
   theme(axis.title = element_blank()) +
   theme(legend.position = "bottom") +
-  theme(legend.key.width=unit(3,"cm"))+
+  theme(legend.key.width=unit(1.5,"cm"))+
   theme(panel.grid = element_blank()) +
   theme(panel.background = element_rect(fill = "#596673")) +
   theme(plot.margin = unit(c(0, 0, 0.5, 0), 'cm'))+
-  theme(text=element_text(family="Helvetica", face="bold", size=12),
-        legend.title=element_text(size=12), 
-        legend.text=element_text(size=12),
+  theme(text=element_text(family="Helvetica", face="bold", size=10),
+        legend.title=element_text(size=8), 
+        legend.text=element_text(size=8),
         rect = element_rect(fill = "transparent")) 
 
 mbase<- ggplot() +  mapcoords +  country_shapes+
@@ -248,9 +248,9 @@ for (ind in 2:length(index)){
     dsub <- read.csv(d) %>% #dplyr::filter(pa_id%in% oPAs) %>% 
       dplyr::select(lon_lowestmode, lat_lowestmode,agbd)
     print("alldata")
-    if(nrow(dsub)>5000){
-      dsub <- dsub %>% sample_n(5000)
-    }
+    # if(nrow(dsub)>5000){
+    #   dsub <- dsub %>% sample_n(5000)
+    # }
     sub_dd_all <- rbind(sub_dd_all, dsub)
     return(sub_dd_all)
     
@@ -267,7 +267,7 @@ for (ind in 2:length(index)){
   
 }
 
-mapcoords <- coord_fixed(xlim = c(-178, 180), ylim = c(-51.6, 51.6))
+mapcoords <-mapcoords  # coord_fixed(xlim = c(-178, 180), ylim = c(-51.6, 51.6))
 
 mbase2 <- mbase+country_border+maptheme+mapcoords+
   scale_fill_manual(values=NA) +
@@ -275,13 +275,13 @@ mbase2 <- mbase+country_border+maptheme+mapcoords+
 
 mbase2=mbase2+labs(tag = "B")
 
-ggplot2::ggsave(filename="/gpfs/data1/duncansongp/GEDI_global_PA/figures/JAN21_FIGS/fig2_gedishots_dist_agbd_mar26_2.png",
+ggplot2::ggsave(filename="/gpfs/data1/duncansongp/GEDI_global_PA/figures/JAN21_FIGS/fig2_gedishots_dist_agbd_oct25_amaz_zoom.png",
                 plot=mbase2, width=12, height=4,
                 units = "in", dpi="print",bg = "transparent")
 
 
 
-#--------canopy cover----------------------------------------
+#-------------------canopy cover----------------------------------------
 
 dd <- list.files(path = paste(fpath, "WDPA_gedi_l2a+l2b_clean2/",sep=""), pattern="",full.names = TRUE, recursive=TRUE)
 
@@ -292,7 +292,7 @@ lab=format(b)
 
 nonforest=c("Montane Grasslands & Shrublands", "Deserts & Xeric Shrublands", "Tundra", "Tropical & Subtropical Grasslands, Savannas & Shrublands",
             "Temperate Grasslands, Savannas & Shrublands","Flooded Grasslands & Savannas")
-mapcoords <-coord_fixed(xlim = c(-178, 180), ylim = c(-55, 55)) #coord_fixed(xlim =c(60, 75) , ylim =c(29, 39) )   #
+mapcoords <-   coord_fixed(xlim = c(-83.3, -36.5), ylim = c(-26, 12.5))#coord_fixed(xlim = c(-178, 180), ylim = c(-55, 55)) #coord_fixed(xlim =c(60, 75) , ylim =c(29, 39) )   #
 country_shapes <- geom_polygon(aes(x = long, y = lat, group = group),
                                data = map_data('world'),
                                fill = "#CECECE", color = "transparent",
@@ -307,13 +307,13 @@ maptheme <- theme(panel.grid = element_blank()) +
   theme(axis.ticks = element_blank()) +
   theme(axis.title = element_blank()) +
   theme(legend.position = "bottom") +
-  theme(legend.key.width=unit(3,"cm"))+
+  theme(legend.key.width=unit(1.5,"cm"))+
   theme(panel.grid = element_blank()) +
   theme(panel.background = element_rect(fill = "#596673")) +
   theme(plot.margin = unit(c(0, 0, 0.5, 0), 'cm'))+
-  theme(text=element_text(family="Helvetica", face="bold", size=12),
-        legend.title=element_text(size=12), 
-        legend.text=element_text(size=12),
+  theme(text=element_text(family="Helvetica", face="bold", size=10),
+        legend.title=element_text(size=8), 
+        legend.text=element_text(size=8),
         rect = element_rect(fill = "transparent")) 
 
 mbase<- ggplot() +  mapcoords +  country_shapes+
@@ -340,13 +340,13 @@ mbase=mbase+ geom_point(data=t,
 
 set.seed(1234)
 index <- c(seq(1, length(dd), 110), length(dd))
-for (ind in 132:length(index)){
+for (ind in 2:length(index)){
   print(ind)
   start <- index[ind-1]
   end <- index[ind]
   sub_dd <- dd[start:end]
   
-  registerDoParallel(cores=10)
+  registerDoParallel(cores=15)
   sub_dd_all <- foreach(d=sub_dd,.combine = rbind, .packages=c('sp','magrittr', 'dplyr','tidyr','raster')) %dopar% {
     sub_dd_all <- data.frame()
     print(d)
@@ -354,9 +354,9 @@ for (ind in 132:length(index)){
     dsub <- read.csv(d) %>% #dplyr::filter(pa_id%in% oPAs) %>% 
       dplyr::select(lon_lowestmode, lat_lowestmode,cover)
     print("alldata")
-    if(nrow(dsub)>5000){
-      dsub <- dsub %>% sample_n(5000)
-    }
+    # if(nrow(dsub)>5000){
+    #   dsub <- dsub %>% sample_n(5000)
+    # }
     sub_dd_all <- rbind(sub_dd_all, dsub)
     return(sub_dd_all)
     
@@ -374,7 +374,7 @@ for (ind in 132:length(index)){
 }
 
 
-mapcoords <- coord_fixed(xlim = c(-178, 180), ylim = c(-51.6, 51.6))
+mapcoords <- mapcoords  #coord_fixed(xlim = c(-178, 180), ylim = c(-51.6, 51.6))
 
 mbase3 <- mbase+country_border+maptheme+
   scale_fill_manual(values=NA) +  mapcoords+        
@@ -382,18 +382,18 @@ mbase3 <- mbase+country_border+maptheme+
 
 
 mbase3=mbase3+labs(tag="E")
-ggplot2::ggsave(filename="/gpfs/data1/duncansongp/GEDI_global_PA/figures/JAN21_FIGS/fig2_gedishots_dist_cover_mar26_3.png", 
+ggplot2::ggsave(filename="/gpfs/data1/duncansongp/GEDI_global_PA/figures/JAN21_FIGS/fig2_gedishots_dist_cover_oct25_amaz_zoom2.png", 
                 plot=mbase3, width=12, height=4,
                 units = "in", dpi="print",bg = "transparent")
 
 #-----PAI--------------------
 
-dd <- list.files(path = paste(fpath, "WDPA_gedi_l2a+l2b_clean2/",sep=""), pattern="",full.names = TRUE, recursive=TRUE)[1:100]
+dd <- list.files(path = paste(fpath, "WDPA_gedi_l2a+l2b_clean2/",sep=""), pattern="",full.names = TRUE, recursive=TRUE)
 b=c(seq(0, 9, 1), 10)
 lab=format(b)
 lab[length(b)]="10+"
 lab=str_wrap(lab, width = 5)
-mapcoords <-coord_fixed(xlim = c(-178, 180), ylim = c(-55, 55)) #coord_fixed(xlim =c(60, 75) , ylim =c(29, 39) )   #
+mapcoords <-  coord_fixed(xlim = c(-83.3, -36.5), ylim = c(-26, 12.5)) #coord_fixed(xlim = c(-178, 180), ylim = c(-55, 55)) #coord_fixed(xlim =c(60, 75) , ylim =c(29, 39) )   #
 country_shapes <- geom_polygon(aes(x = long, y = lat, group = group),
                                data = map_data('world'),
                                fill = "#CECECE", color = "transparent",
@@ -408,13 +408,13 @@ maptheme <- theme(panel.grid = element_blank()) +
   theme(axis.ticks = element_blank()) +
   theme(axis.title = element_blank()) +
   theme(legend.position = "bottom") +
-  theme(legend.key.width=unit(3,"cm"))+
+  theme(legend.key.width=unit(1.5,"cm"))+
   theme(panel.grid = element_blank()) +
   theme(panel.background = element_rect(fill = "#596673")) +
   theme(plot.margin = unit(c(0, 0, 0.5, 0), 'cm'))+
-  theme(text=element_text(family="Helvetica", face="bold", size=12),
-        legend.title=element_text(size=12), 
-        legend.text=element_text(size=12),
+  theme(text=element_text(family="Helvetica", face="bold", size=10),
+        legend.title=element_text(size=8), 
+        legend.text=element_text(size=8),
         rect = element_rect(fill = "transparent")) 
 
 mbase<- ggplot() +  mapcoords +  country_shapes+
@@ -454,9 +454,9 @@ for (ind in 2:length(index)){
     dsub <- read.csv(d) %>% #dplyr::filter(pa_id%in% oPAs) %>% 
       dplyr::select(lon_lowestmode, lat_lowestmode,pai)
     print("alldata")
-    if(nrow(dsub)>5000){
-      dsub <- dsub %>% sample_n(5000)
-    }
+    # if(nrow(dsub)>5000){
+    #   dsub <- dsub %>% sample_n(5000)
+    # }
     sub_dd_all <- rbind(sub_dd_all, dsub)
     return(sub_dd_all)
     
@@ -474,7 +474,7 @@ for (ind in 2:length(index)){
 }
 
 
-mapcoords <- coord_fixed(xlim = c(-178, 180), ylim = c(-51.6, 51.6))
+mapcoords <- mapcoords #coord_fixed(xlim = c(-178, 180), ylim = c(-51.6, 51.6))
 
 mbase4 <- mbase+country_border+maptheme+
   scale_fill_manual(values=NA) +  mapcoords+        
@@ -483,7 +483,7 @@ mbase4 <- mbase+country_border+maptheme+
 
 mbase4=mbase4+labs(tag = "D") 
 
-ggplot2::ggsave(filename="/gpfs/data1/duncansongp/GEDI_global_PA/figures/JAN21_FIGS/fig2_gedishots_dist_cover_mar26_2.png", 
+ggplot2::ggsave(filename="/gpfs/data1/duncansongp/GEDI_global_PA/figures/JAN21_FIGS/fig2_gedishots_dist_pai_oct25_amaz_zoom.png", 
                 plot=mbase4, width=12, height=4,
                 units = "in", dpi="print",bg = "transparent")
 

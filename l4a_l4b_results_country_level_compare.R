@@ -78,7 +78,7 @@ for (country in countryContinent$iso3){
   iso_region <- read.csv("/gpfs/data1/duncansongp/GEDI_global_PA/csv/iso3_region_pair.csv") %>% 
     rbind(read.csv("/gpfs/data1/duncansongp/GEDI_global_PA/csv/nonanalyzed_iso3_region.csv"))
   
-  l4bResult0 <- read.csv("/gpfs/data1/duncansongp/leitoldv/gedi_l4b_AGB_results_2022MAR07_CountryBiome_V2.csv") %>% 
+  l4bResult0 <- read.csv("/gpfs/data1/duncansongp/leitoldv/gedi_l4b_AGB_results_OLD/gedi_l4b_AGB_results_2022MAR07_CountryBiome_V2.csv") %>% 
     mutate(rid0=rid) %>% 
     mutate(rid=sub("unmatched_PA","unmatchedPA",rid0))
   
@@ -90,7 +90,7 @@ for (country in countryContinent$iso3){
     mutate(biom=sub("_[^_]+$", "",gsub("^.*?_", "", rid))) %>% 
     left_join(iso_region, by="iso3")
   
-  l4b_conti_biom <- read.csv("/gpfs/data1/duncansongp/leitoldv/gedi_l4b_AGB_results_2022JAN19_ContinentBiome.csv") %>% 
+  l4b_conti_biom <- read.csv("/gpfs/data1/duncansongp/leitoldv/gedi_l4b_AGB_results_OLD/gedi_l4b_AGB_results_2022JAN19_ContinentBiome.csv") %>% 
     mutate(rid0=rid) %>% 
     mutate(rid=sub("unmatched_PA","unmatchedPA",rid)) %>% 
     mutate(conti =sub("_.*", "", rid)) %>% 
@@ -225,7 +225,7 @@ for (country in countryList){
   iso_region <- read.csv("/gpfs/data1/duncansongp/GEDI_global_PA/csv/iso3_region_pair.csv") %>% 
     rbind(read.csv("/gpfs/data1/duncansongp/GEDI_global_PA/csv/nonanalyzed_iso3_region.csv"))
   continentBiome <- read.csv("/gpfs/data1/duncansongp/GEDI_global_PA/WDPA_L4b_output/l4bAGB_continentxbiome_aggregated_apr22.csv")
-  l4bResult0 <- read.csv("/gpfs/data1/duncansongp/leitoldv/gedi_l4b_AGB_results_2022APR22_CountryBiome_V2_modified.csv") %>% 
+  l4bResult0 <- read.csv("/gpfs/data1/duncansongp/leitoldv/gedi_l4b_AGB_results_OLD/gedi_l4b_AGB_results_2022APR22_CountryBiome_V2_modified.csv") %>% 
     mutate(rid0=rid) %>% 
     mutate(rid=sub("unmatched_PA","unmatchedPA",rid0))
   
@@ -237,7 +237,7 @@ for (country in countryList){
     mutate(biom=sub("_[^_]+$", "",gsub("^.*?_", "", rid))) %>% 
     left_join(iso_region, by="iso3")
   
-  l4b_conti_biom <- read.csv("/gpfs/data1/duncansongp/leitoldv/gedi_l4b_AGB_results_2022JAN19_ContinentBiome.csv") %>% 
+  l4b_conti_biom <- read.csv("/gpfs/data1/duncansongp/leitoldv/gedi_l4b_AGB_results_OLD/gedi_l4b_AGB_results_2022JAN19_ContinentBiome.csv") %>% 
     mutate(rid0=rid) %>% 
     mutate(rid=sub("unmatched_PA","unmatchedPA",rid)) %>% 
     mutate(conti =sub("_.*", "", rid)) %>% 
@@ -603,7 +603,7 @@ for (country in countryList){
 #----step 5: compare with the country level processing results-----
 rm(countryl4b)
 rm(countryArea)
-countryl4b <- read.csv("/gpfs/data1/duncansongp/leitoldv/gedi_l4b_AGB_results_2022MAR07_Country_V2.csv") %>% 
+countryl4b <- read.csv("/gpfs/data1/duncansongp/leitoldv/gedi_l4b_AGB_results_OLD/gedi_l4b_AGB_results_2022MAR07_Country_V2.csv") %>% 
   mutate(rid0=rid) %>% 
   filter(grepl("V2", rid, fixed = TRUE)) %>%   #only grab the verson 2 results
   mutate(rid=sub("_V2","",rid)) %>% 
@@ -869,6 +869,8 @@ allPA_entry
 worldAgg <- analyzedExtra_entry %>% rbind(extrapolatedExtra_entry) %>% rbind(allPA_entry) %>% mutate_if(is.numeric, round, digits=2)
 names(worldAgg) <- c("PA AGB (MT)","PA AGB STDERR (MT)", "AGB TYPE")
 worldAgg <- worldAgg[,c(3,1,2)]
+
+
 stargazer::stargazer(worldAgg, type = 'html',summary = FALSE, digits = 2,
           out = '/gpfs/data1/duncansongp/GEDI_global_PA/figures/JAN21_FIGS/world_agg_stats_apr22.html')
 
@@ -995,7 +997,7 @@ allTables <- AllExtra_top10 %>% rbind(table2) %>% rbind(table3) %>% dplyr::selec
   pivot_longer(cols=c(allPAAGB2, countryAGB2, allPAExtraAGB2),names_to = "AGB_type",values_to="totalAGB")
 
 allTables$AGB_type <- factor(allTables$AGB_type, levels=c("allPAExtraAGB2","allPAAGB2", "countryAGB2"),
-                             labels=c("Additional preserved AGB by PAs", "Total AGB in PAs", "Non-protected AGB in the country"))
+                             labels=c("Additional preserved C by PAs", "Total C in PAs", "Non-protected C in the country"))
 
 # top19iso3 <- AllExtra_top10 %>% dplyr::filter(ISO3!="CAN")
 # allTables$ISO3 <- factor(allTables$ISO3, levels = top19iso3$ISO3,
@@ -1008,27 +1010,40 @@ allTables$ISO3 <- factor(allTables$ISO3, levels = top19iso3$ISO3,
                          labels=c("Brazil","United States","Indonesia","DRC","Peru","Australia","Venezuela","Bolivia","Malaysia",
                                   "Thailand","Chile","France","Mozambique", "Tanzania","Zambia","New Zealand","Madagascar",  "Spain",
                                  "Cambodia"))
+allTables$totalAGB <- allTables$totalAGB*0.49
+
+library(ggpattern)
 
 sbar1 <- ggplot(allTables, aes(fill=AGB_type, y=totalAGB, x=ISO3)) + 
   geom_bar(position="stack", stat="identity") +
-  scale_fill_manual(name="AGB Type",values=c("#7CFC00","#2AAA8A", "#C4B454")) +
+  geom_bar_pattern(position="stack",stat="identity",
+                   mapping=aes(pattern=AGB_type),
+                   # color = "black",
+                   pattern_fill = "black",
+                   pattern_angle = 45,
+                   # pattern_alpha=0.8,
+                   pattern_density = 0.1,pattern_size=0.2,
+                   pattern_spacing = 0.005)+
+  #                  pattern_key_scale_factor = 0.6) +
+  scale_fill_manual(name="C Type",values=c(alpha("#2AAA8A",0.5), "#2AAA8A", "#C4B454")) +
+  scale_pattern_manual(name="C Type",values = c("stripe","none","none")) +
   theme_classic()+#ylim(0,40)+
   theme(text=element_text(family="Helvetica", face="bold", size=12),
         legend.title=element_text(size=12), 
         legend.text=element_text(size=12),
         rect = element_rect(fill = "transparent")) +theme(axis.text.x = element_text(angle = 45, hjust=1))+
-  xlab("")+ylab("AGB (Gt)")+
+  xlab("")+ylab("C (Gt)")+
   # labs(caption = "Countries completed covered by GEDI data are included; US does not include Alaska.")+
   theme(legend.position = c(0.7, 0.8),
         legend.background = element_rect(fill = "white", color = "black"),
         plot.caption = element_text( face = "italic"),
-        panel.background = element_rect(fill = "#FAFAFA"))+labs(tag = "a)")
+        panel.background = element_rect(fill = "#FAFAFA"))+labs(tag = "A")
   
 sbar1
 
 
 allTables2 <- allTables %>% dplyr::filter(AGB_type!=("Additional preserved AGB by PAs")) %>% 
-  mutate(Percentage=allPAAGB/countryAGB*100) %>%
+  mutate(Percentage=(allPAAGB*0.49)/(countryAGB*0.49)*100) %>%
   pivot_longer(cols=c(allPAAGB, countryAGB, allPAExtraAGB),names_to = "AGB_type2",values_to="totalAGB2") %>% 
   group_by(ISO3) %>% arrange(desc(Percentage)) %>% ungroup() %>% filter(AGB_type2!="allPAExtraAGB")
 allTables2$ISO3 <- factor(allTables2$ISO3, levels=unique(allTables2$ISO3))
@@ -1044,16 +1059,16 @@ sbar3 <- ggplot(allTables2, aes( y=Percentage, x=ISO3)) +
         legend.title=element_text(size=12), 
         legend.text=element_text(size=12),
         rect = element_rect(fill = "transparent")) +theme(axis.text.x = element_text(angle = 45, hjust=1))+
-  xlab("")+ylab("National AGB Within Protected Areas (%)")+
+  xlab("")+ylab("National C Within Protected Areas (%)")+
   labs(caption = "Countries completed covered by GEDI data are included; US does not include Alaska")+
   theme(legend.position = c(0.81, 0.12),
         legend.background = element_rect(fill = "white", color = "black"),
         plot.caption = element_text( face = "italic"),
-        panel.background = element_rect(fill = "#FAFAFA"))+labs(tag = "b)")
+        panel.background = element_rect(fill = "#FAFAFA"))+labs(tag = "B")
 
 sbar3
 
-ggplot2::ggsave(filename="/gpfs/data1/duncansongp/GEDI_global_PA/figures/JAN21_FIGS/fig_top20_extratop_percent_vapr22.png", 
+ggplot2::ggsave(filename="/gpfs/data1/duncansongp/GEDI_global_PA/figures/JAN21_FIGS/fig_top20_extratop_percent_vjuly29_C_v2.png", 
                 plot=grid.arrange(sbar1, sbar3, ncol=1), width=6, height=10,
                 units = "in", dpi="print",bg = "transparent")
 
@@ -1165,6 +1180,9 @@ totalAGB_anc <- read.csv("/gpfs/data1/duncansongp/GEDI_global_PA/WDPA_L4b_output
 totalAGB_anc %>% filter(iso3%notin% c("USA_west","USA_east","USA_pcfc")) %>% .$total_pa_area %>% sum->total_pa_area
 
 names(worldAgg) <- c("type","total","error")
+worldAgg$total <- worldAgg$total*0.49
+worldAgg$error <- worldAgg$error*0.49
+worldAgg <- worldAgg %>% mutate_if(is.numeric, round, digits=2)
 worldAgg_rfmt <- worldAgg[2:3,]%>% dplyr::mutate(conti="Globe") %>%  mutate(paagb=paste(total, error, sep="+/-")) %>% 
   dplyr::select(conti,type, paagb) %>% 
   pivot_wider(names_from=type, values_from=paagb) %>% mutate(pa_area=total_pa_area/1000000)
@@ -1179,6 +1197,9 @@ contiagg <- contiagg%>% left_join(conti_total_pa_area, by=c("conti"="continent")
 contiagg$conti <-factor(as.factor(contiagg$conti), levels=c("SA","As","Af","US","Au","Eu"), 
                                          labels=c("South America (SA)","Asia (AS)", "Africa (AF)",
                                                   "North America (NA)", "Oceania (OC)", "Europe (EU)"))
+contiagg$total <- contiagg$total*0.49
+contiagg$error <- contiagg$error*0.49
+contiagg <- contiagg %>% mutate_if(is.numeric, round, digits=2)
 contiAgg_rfmt <- contiagg %>% mutate(paagb=paste(total, error, sep="+/-")) %>% dplyr::select(conti, type, paagb, pa_area) %>% 
   pivot_wider(names_from=type, values_from=c(paagb, pa_area)) %>%  mutate(pa_area=pa_area_AllPA) %>% 
   dplyr::select(-c(pa_area_AllPAExtra,pa_area_AllPA))
@@ -1205,6 +1226,8 @@ names(biomeAll) <-names(biomeExtra)
 biome_results <- rbind(biomeExtra, biomeAll) %>% left_join(biomeAreas,by="biome")
 names(biome_results) <- c("X","biome","total","error","type","pa_area")
 
+biome_results$total <- biome_results$total*0.49
+biome_results$error <- biome_results$error*0.49
 biomAgg_rfmt <- biome_results %>%mutate_if(is.numeric, round, digits=2) %>%  mutate(paagb=paste(total, error, sep="+/-")) %>% 
   dplyr::select(biome, type, paagb) %>% 
   pivot_wider(names_from=type, values_from=paagb) %>% left_join(biomeAreas,by="biome") %>% dplyr::rename(pa_area=pa_Area) %>% 
@@ -1219,13 +1242,21 @@ worldAgg_rfmt %>% rbind(contiAgg_rfmt) %>% rbind(biomAgg_rfmt) %>%
 allrw_x <- allrows %>% as.matrix()
 rownames(allrw_x) <- allrw_x[,1]
 allrw_x <- allrw_x[,2:4]
-colnames(allrw_x) <- c("Preserved AGB in PAs (Gt) ","All AGB in PAs (Gt) ", "All PA areas (Mkm\u00B2) ")
+colnames(allrw_x) <- c("Additional PA C (Gt) ","Total aboveground C in PAs (Gt) ", "Total PA Area (Mkm\u00B2) ")
 
+library(htmlTable)
+library(tableHTML)
+# sink("/gpfs/data1/duncansongp/amberliang/mytable2.html")
 t <- htmlTable(allrw_x, 
           tspanner =c("Globe","Continent","Biome"),
-          n.tspanner = c(1,6,nrow(allrw_x) - 7))
+          n.tspanner = c(1,6,nrow(allrw_x) - 7),
+          css.cell = c("width: 550;","width: 200;","width: 150;","width: 230;"))
+print(t,type="html",useViewer=TRUE)
+# print(t)
+# sink()
+t
 
-write_tableHTML(t, file = 'myfile.html')
+write_tableHTML(t, file = 'myfile_C.html')
 
 
 #function for getting all the biome level pa areas
@@ -1242,7 +1273,7 @@ countryBiomAreasGenerate <- function(countryContinent){
     iso_region <- read.csv("/gpfs/data1/duncansongp/GEDI_global_PA/csv/iso3_region_pair.csv") %>% 
       rbind(read.csv("/gpfs/data1/duncansongp/GEDI_global_PA/csv/nonanalyzed_iso3_region.csv"))
     continentBiome <- read.csv("/gpfs/data1/duncansongp/GEDI_global_PA/WDPA_L4b_output/l4bAGB_continentxbiome_aggregated_apr22.csv")
-    l4bResult0 <- read.csv("/gpfs/data1/duncansongp/leitoldv/gedi_l4b_AGB_results_2022APR22_CountryBiome_V2_modified.csv") %>% 
+    l4bResult0 <- read.csv("/gpfs/data1/duncansongp/leitoldv/gedi_l4b_AGB_results_OLD/gedi_l4b_AGB_results_2022APR22_CountryBiome_V2_modified.csv") %>% 
       mutate(rid0=rid) %>% 
       mutate(rid=sub("unmatched_PA","unmatchedPA",rid0))
     
@@ -1254,7 +1285,7 @@ countryBiomAreasGenerate <- function(countryContinent){
       mutate(biom=sub("_[^_]+$", "",gsub("^.*?_", "", rid))) %>% 
       left_join(iso_region, by="iso3")
     
-    l4b_conti_biom <- read.csv("/gpfs/data1/duncansongp/leitoldv/gedi_l4b_AGB_results_2022JAN19_ContinentBiome.csv") %>% 
+    l4b_conti_biom <- read.csv("/gpfs/data1/duncansongp/leitoldv/gedi_l4b_AGB_results_OLD/gedi_l4b_AGB_results_2022JAN19_ContinentBiome.csv") %>% 
       mutate(rid0=rid) %>% 
       mutate(rid=sub("unmatched_PA","unmatchedPA",rid)) %>% 
       mutate(conti =sub("_.*", "", rid)) %>% 

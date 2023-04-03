@@ -540,14 +540,15 @@ contiBiomAggErr <- function(conti=conti, biome=biome){
       mutate(weighted_AGBD_diff_err=sqrt((country_PA_se**2)+(country_Ctrl_se**2))) %>% 
       mutate(extraPaAGB_err= weighted_AGBD_diff_err*total_pa_area) %>% 
       mutate(extraNonMatchPaAGB_err=weighted_AGBD_diff_err*total_unmatchedpa_area) %>% 
-      mutate(allExtraAGB_err=sqrt((extraPaAGB_err**2)+(extraNonMatchPaAGB_err**2)))
+      mutate(allExtraAGB_err00=sqrt((extraPaAGB_err**2)+(extraNonMatchPaAGB_err**2))) %>% 
+      mutate(allExtraAGB_err=sqrt(((extraPaAGB_err*0.49)**2)+((extraNonMatchPaAGB_err*0.49)**2)))
     
     allExtra_output <- contiBiomextra_output1%>% 
       dplyr::summarise(allExtraAGB_weighted=allExtraAGB_weighted/1000000000,
                        allExtraAGB=allExtraAGB/1000000000,
                        totalExtraAGBallPAs_err=sqrt(allExtraAGB_err**2)/1000000000,
-                       totalExtraAGBallPAs_err2=sqrt(((country_PA_se*total_pa_area)**2)+((country_Ctrl_se*total_pa_area)**2)+
-                                                       ((country_PA_se*total_unmatchedpa_area)**2)+((country_Ctrl_se*total_unmatchedpa_area)**2))/1000000000) %>%
+                       totalExtraAGBallPAs_err2=sqrt(((country_PA_se*total_pa_area*0.49)**2)+((country_Ctrl_se*total_pa_area*0.49)**2)+
+                                                       ((country_PA_se*total_unmatchedpa_area*0.49)**2)+((country_Ctrl_se*total_unmatchedpa_area*0.49)**2))/1000000000) %>%
       # mutate(totalExtraAGB_err=sqrt(extraAGB_err**2)) %>%
       mutate(type="allPAExtraAGB") %>% unique()  
     return(allExtra_output)
@@ -560,10 +561,10 @@ new <- output %>% group_by(conti) %>%
                                        "Temperate_Grasslands_Savannas_Shrublands","Tropical_Subtropical_Grasslands_Savannas_Shrublands"), "GS", 
                                        ifelse(biome %in% c("Temperate_Conifer_Forests", "Tropical_Subtropical_Coniferous_Forests"), "CF",as.character(biome)  ))) %>% 
   group_by(conti, newgroup) %>% 
-  dplyr::summarise(contiBiomPAAGB=sum(allExtraAGB, na.rm=TRUE), contiBiomPAAGB_err=sqrt(sum(totalExtraAGBallPAs_err2**2,na.rm=TRUE))) %>% 
+  dplyr::summarise(contiBiomPAAGB=sum(allExtraAGB, na.rm=TRUE)*0.49, contiBiomPAAGB_err=sqrt(sum(totalExtraAGBallPAs_err2**2,na.rm=TRUE))) %>% 
   arrange(desc(contiBiomPAAGB)) #%>%  mutate_if(is.numeric, round, digits=2)
 
-write.csv(new, "/gpfs/data1/duncansongp/GEDI_global_PA/WDPA_L4b_output/l4bAGB_contixbiome_extraAGB_err_vapr22.csv")
+write.csv(new, "/gpfs/data1/duncansongp/GEDI_global_PA/WDPA_L4b_output/l4bAGB_contixbiome_extraAGB_err_vapr22_C.csv")
 
 
 # this is using the  conti x biome AGB to get biome level results, otherwise uncertainitties huge
@@ -572,7 +573,7 @@ output %>% group_by(biome) %>%
   arrange(desc(contiBiomPAAGB))->biomeExtra
 
 
-write.csv(biomeExtra, "/gpfs/data1/duncansongp/GEDI_global_PA/WDPA_L4b_output/l4bAGB_biome_extraAGB_err_vapr22.csv")
+write.csv(biomeExtra, "/gpfs/data1/duncansongp/GEDI_global_PA/WDPA_L4b_output/l4bAGB_biome_extraAGB_err_vapr22_C.csv")
 
 
 #----2.total AGB in PAs at contient x biome level------
@@ -718,29 +719,29 @@ contiBiomAggErr2 <- function(conti=conti, biome=biome){
   
   allAGB_output <- contiBiomextra_output1%>% 
     dplyr::summarise(sumPAAGB=sum(allPAAGB)*100/1000000000, 
-                     allExtraAGB_uncer=sqrt((country_PA_se * total_pa_area)**2+(country_unmatched_se *total_unmatchedpa_area)**2 )/1000000000) %>% 
+                     allExtraAGB_uncer=sqrt((country_PA_se * total_pa_area*0.49)**2+(country_unmatched_se *total_unmatchedpa_area*0.49)**2 )/1000000000,
+                     allExtraAGB_uncer00=sqrt((country_PA_se * total_pa_area)**2+(country_unmatched_se *total_unmatchedpa_area)**2 )/1000000000) %>% 
     mutate(type="allPAAGB") %>% unique()
   return(allAGB_output)
   
 }
 
 #new is the table for vero with new grouping 
-new2 <- output2 %>% group_by(conti) %>% 
+new2 <-  output2 %>% group_by(conti) %>% 
   mutate(newgroup= ifelse(biome %in% c("Montane_Grasslands_Shrublands","Flooded_Grasslands_Savannas",
                                        "Temperate_Grasslands_Savannas_Shrublands","Tropical_Subtropical_Grasslands_Savannas_Shrublands"), "GS", 
                           ifelse(biome %in% c("Temperate_Conifer_Forests", "Tropical_Subtropical_Coniferous_Forests"), "CF",as.character(biome)  ))) %>% 
   group_by(conti, newgroup) %>% 
   dplyr::summarise(contiBiomAllPAAGB=sum( sumPAAGB, na.rm=TRUE), contiBiomPAAGB_err=sqrt(sum(allExtraAGB_uncer**2,na.rm=TRUE))) %>% 
   arrange(desc(contiBiomAllPAAGB)) #%>%  mutate_if(is.numeric, round, digits=2)
-write.csv(new2, "/gpfs/data1/duncansongp/GEDI_global_PA/WDPA_L4b_output/l4bAGB_contixbiome_AllAGB_err_vapr22.csv")
+write.csv(new2, "/gpfs/data1/duncansongp/GEDI_global_PA/WDPA_L4b_output/l4bAGB_contixbiome_AllAGB_err_vapr22_C.csv")
 
 #aggregating to the biome level 
 output2 %>% group_by(biome) %>%  
-  dplyr::summarise(contiBiomAllPAAGB=sum( sumPAAGB, na.rm=TRUE), contiBiomPAAGB_err=sqrt(sum(allExtraAGB_uncer**2,na.rm=TRUE))) %>% 
+  dplyr::summarise(contiBiomAllPAAGB=sum( sumPAAGB*0.49, na.rm=TRUE), contiBiomPAAGB_err=sqrt(sum(allExtraAGB_uncer**2,na.rm=TRUE))) %>% 
   arrange(desc(contiBiomAllPAAGB))-> biomeAll
 
-
-write.csv(biomeAll, "/gpfs/data1/duncansongp/GEDI_global_PA/WDPA_L4b_output/l4bAGB_biome_allAGB_err_vapr22.csv")
+write.csv(biomeAll, "/gpfs/data1/duncansongp/GEDI_global_PA/WDPA_L4b_output/l4bAGB_biome_allAGB_err_vapr22_C.csv")
 
 
 #----3. total AGB in PAs at contient level------
